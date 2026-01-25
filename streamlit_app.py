@@ -2255,79 +2255,226 @@ def process_satellite_data(satellite_data, elevation=1500):
 
 # Page configuration
 st.set_page_config(
-    page_title="Avalanche Prediction System",
-    page_icon="🏔️",
-    layout="wide"
+    page_title="Avalanche Risk Assessment",
+    page_icon="⛰️",
+    layout="wide",
+    initial_sidebar_state="collapsed"
 )
 
-# Custom CSS
+# Clean, professional CSS
 st.markdown("""
 <style>
-    .main-header {
-        font-size: 2.5rem;
-        color: #1E88E5;
-        text-align: center;
-        margin-bottom: 1rem;
+    /* Clean typography */
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+    
+    .stApp {
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
     }
+    
+    /* Header styling */
+    .app-header {
+        padding: 1.5rem 0 1rem 0;
+        border-bottom: 1px solid #e5e7eb;
+        margin-bottom: 1.5rem;
+    }
+    
+    .app-title {
+        font-size: 1.75rem;
+        font-weight: 600;
+        color: #1f2937;
+        margin: 0;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+    
+    .app-subtitle {
+        font-size: 0.875rem;
+        color: #6b7280;
+        margin-top: 0.25rem;
+    }
+    
+    /* Risk display cards */
+    .risk-card {
+        padding: 1.5rem;
+        border-radius: 12px;
+        text-align: center;
+        margin: 1rem 0;
+    }
+    
     .risk-high {
-        background-color: #ff4444;
-        padding: 20px;
-        border-radius: 10px;
+        background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
         color: white;
-        text-align: center;
-        font-size: 1.5rem;
     }
+    
     .risk-medium {
-        background-color: #ffbb33;
-        padding: 20px;
-        border-radius: 10px;
-        color: black;
-        text-align: center;
-        font-size: 1.5rem;
-    }
-    .risk-low {
-        background-color: #00C851;
-        padding: 20px;
-        border-radius: 10px;
+        background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
         color: white;
-        text-align: center;
+    }
+    
+    .risk-low {
+        background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+        color: white;
+    }
+    
+    .risk-none {
+        background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%);
+        color: white;
+    }
+    
+    .risk-label {
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        opacity: 0.9;
+        margin-bottom: 0.25rem;
+    }
+    
+    .risk-level {
+        font-size: 2rem;
+        font-weight: 700;
+        margin: 0.25rem 0;
+    }
+    
+    .risk-confidence {
+        font-size: 1rem;
+        opacity: 0.9;
+    }
+    
+    /* Data cards */
+    .data-card {
+        background: #f9fafb;
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
+        padding: 1rem;
+        margin: 0.5rem 0;
+    }
+    
+    .data-label {
+        font-size: 0.75rem;
+        color: #6b7280;
+        text-transform: uppercase;
+        letter-spacing: 0.025em;
+    }
+    
+    .data-value {
+        font-size: 1.25rem;
+        font-weight: 600;
+        color: #1f2937;
+    }
+    
+    /* Status indicators */
+    .status-dot {
+        display: inline-block;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        margin-right: 6px;
+    }
+    
+    .status-online { background-color: #10b981; }
+    .status-partial { background-color: #f59e0b; }
+    .status-offline { background-color: #ef4444; }
+    
+    /* Section headers */
+    .section-header {
+        font-size: 1rem;
+        font-weight: 600;
+        color: #374151;
+        margin: 1.5rem 0 0.75rem 0;
+        padding-bottom: 0.5rem;
+        border-bottom: 1px solid #e5e7eb;
+    }
+    
+    /* Clean buttons */
+    .stButton > button {
+        border-radius: 8px;
+        font-weight: 500;
+        padding: 0.5rem 1rem;
+        transition: all 0.15s ease;
+    }
+    
+    .stButton > button:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+    }
+    
+    /* Info boxes */
+    .info-box {
+        background: #f0f9ff;
+        border-left: 3px solid #0284c7;
+        padding: 0.75rem 1rem;
+        border-radius: 0 8px 8px 0;
+        font-size: 0.875rem;
+        color: #0c4a6e;
+    }
+    
+    .warning-box {
+        background: #fffbeb;
+        border-left: 3px solid #f59e0b;
+        padding: 0.75rem 1rem;
+        border-radius: 0 8px 8px 0;
+        font-size: 0.875rem;
+        color: #78350f;
+    }
+    
+    /* Source tags */
+    .source-tag {
+        display: inline-block;
+        background: #e5e7eb;
+        color: #374151;
+        padding: 0.125rem 0.5rem;
+        border-radius: 4px;
+        font-size: 0.75rem;
+        margin: 0.125rem;
+    }
+    
+    .source-tag-satellite {
+        background: #dbeafe;
+        color: #1e40af;
+    }
+    
+    .source-tag-station {
+        background: #dcfce7;
+        color: #166534;
+    }
+    
+    /* Hide streamlit branding */
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    
+    /* Metric styling */
+    [data-testid="stMetricValue"] {
         font-size: 1.5rem;
     }
-    .satellite-source {
-        background-color: #e3f2fd;
-        padding: 10px;
-        border-radius: 5px;
-        margin: 5px 0;
-        border-left: 4px solid #1E88E5;
-    }
-    .data-quality-good {
-        color: #00C851;
-        font-weight: bold;
-    }
-    .data-quality-estimated {
-        color: #ffbb33;
-        font-weight: bold;
+    
+    /* Clean expander */
+    .streamlit-expanderHeader {
+        font-size: 0.875rem;
+        font-weight: 500;
     }
 </style>
 """, unsafe_allow_html=True)
 
-# Title
-st.markdown('<h1 class="main-header">🏔️ Avalanche Prediction System</h1>', unsafe_allow_html=True)
-st.markdown('<p style="text-align: center; font-size: 1.2rem;">Multi-Satellite Data Integration: MODIS • VIIRS • ERA5 • GOES • Sentinel</p>', unsafe_allow_html=True)
-st.markdown("---")
+# Header
+st.markdown("""
+<div class="app-header">
+    <h1 class="app-title">⛰️ Avalanche Risk Assessment</h1>
+    <p class="app-subtitle">Real-time analysis using satellite and weather station data</p>
+</div>
+""", unsafe_allow_html=True)
 
-# ============================================
-# LOCATION & AUTO-FETCH SECTION
-# ============================================
-st.subheader("📍 Location & Satellite Data Source")
+# Location selection
+st.markdown('<p class="section-header">Location</p>', unsafe_allow_html=True)
 
-col_loc1, col_loc2 = st.columns([2, 1])
+col_loc1, col_loc2 = st.columns([3, 1])
 
 with col_loc1:
     data_source = st.radio(
-        "How would you like to input data?",
-        ["🛰️ Auto-fetch from satellites (using my location)", "✍️ Manual input"],
-        horizontal=True
+        "Data input method",
+        ["Automatic (satellite data)", "Manual entry"],
+        horizontal=True,
+        label_visibility="collapsed"
     )
 
 # Initialize session state
@@ -2350,54 +2497,48 @@ if 'map_clicked_lat' not in st.session_state:
 if 'map_clicked_lon' not in st.session_state:
     st.session_state.map_clicked_lon = None
 
-if data_source == "🛰️ Auto-fetch from satellites (using my location)":
+if data_source == "Automatic (satellite data)":
     
-    # Location Selection Section
-    st.markdown("#### 📍 Select Your Location")
-    
-    ip_method = st.radio(
-        "How would you like to provide your location?",
-        ["🔍 Auto-detect my IP address", "🗺️ Select on map"],
+    # Location selection tabs
+    location_tab = st.radio(
+        "Select location method",
+        ["Use my IP address", "Select on map"],
         horizontal=True,
-        key="ip_method"
+        label_visibility="collapsed"
     )
     
-    if ip_method == "🔍 Auto-detect my IP address":
-        # Request permission
-        st.info("🔒 **Privacy Notice:** To detect your location, we need to access your IP address. Your IP will be used only for geolocation and won't be stored.")
+    if location_tab == "Use my IP address":
+        st.markdown('<div class="info-box">Your IP address will be used only to determine your approximate location. No data is stored.</div>', unsafe_allow_html=True)
         
-        col_consent1, col_consent2 = st.columns([1, 3])
-        with col_consent1:
-            if st.button("✅ Allow IP Detection", type="primary"):
-                with st.spinner("🔍 Detecting your IP address..."):
-                    detected_ip = get_ip_address()
-                    if detected_ip:
-                        st.session_state.user_ip = detected_ip
-                        st.session_state.ip_consent = True
-                        st.success(f"✅ IP Address detected: `{detected_ip}`")
-                    else:
-                        st.error("❌ Could not detect IP address. Please select location on map.")
+        if st.button("Detect my location", type="primary"):
+            with st.spinner("Detecting location..."):
+                detected_ip = get_ip_address()
+                if detected_ip:
+                    st.session_state.user_ip = detected_ip
+                    st.session_state.ip_consent = True
+                else:
+                    st.error("Could not detect location. Please use map selection instead.")
         
         if st.session_state.user_ip and st.session_state.ip_consent:
-            st.success(f"🌐 **Your IP Address:** `{st.session_state.user_ip}`")
+            st.success(f"Location detected from IP: {st.session_state.user_ip}")
     
     else:  # Select on map
-        st.session_state.ip_consent = True  # Skip IP step
+        st.session_state.ip_consent = True
         
-        st.markdown("**Click on the map to select your location:**")
+        st.markdown("Click anywhere on the map to set your location:")
         
-        # Get default location (Alps region for avalanche context)
+        # Default to Alps region
         default_lat = st.session_state.get('map_clicked_lat') or 46.8
         default_lon = st.session_state.get('map_clicked_lon') or 9.8
         
-        # Create the interactive map for location selection
+        # Create interactive map
         m = folium.Map(
             location=[default_lat, default_lon],
             zoom_start=6,
             tiles='OpenStreetMap'
         )
         
-        # Add terrain/satellite layer options
+        # Add satellite layer
         folium.TileLayer(
             tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
             attr='Esri',
@@ -2405,6 +2546,7 @@ if data_source == "🛰️ Auto-fetch from satellites (using my location)":
             overlay=False
         ).add_to(m)
         
+        # Add terrain layer
         folium.TileLayer(
             tiles='https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
             attr='OpenTopoMap',
@@ -2412,76 +2554,37 @@ if data_source == "🛰️ Auto-fetch from satellites (using my location)":
             overlay=False
         ).add_to(m)
         
-        # Add layer control
         folium.LayerControl().add_to(m)
         
-        # Add marker if location is selected
+        # Add marker if location selected
         if st.session_state.get('map_clicked_lat'):
             folium.Marker(
                 [st.session_state.map_clicked_lat, st.session_state.map_clicked_lon],
-                popup=f"Selected Location<br>Lat: {st.session_state.map_clicked_lat:.4f}<br>Lon: {st.session_state.map_clicked_lon:.4f}",
-                tooltip="📍 Selected Location",
-                icon=folium.Icon(color='red', icon='info-sign')
-            ).add_to(m)
-            
-            # Add a circle to show approximate area
-            folium.Circle(
-                [st.session_state.map_clicked_lat, st.session_state.map_clicked_lon],
-                radius=5000,  # 5km radius
-                color='blue',
-                fill=True,
-                fill_opacity=0.1,
-                popup="5km radius"
+                popup=f"Lat: {st.session_state.map_clicked_lat:.4f}, Lon: {st.session_state.map_clicked_lon:.4f}",
+                icon=folium.Icon(color='red', icon='map-marker', prefix='fa')
             ).add_to(m)
         
-        # Display the map and capture clicks
-        map_data = st_folium(
-            m,
-            width=700,
-            height=400,
-            key="main_location_map",
-            returned_objects=["last_clicked"]
-        )
+        # Display map
+        map_data = st_folium(m, width=700, height=350, key="main_location_map", returned_objects=["last_clicked"])
         
-        # Handle map click
         if map_data and map_data.get('last_clicked'):
-            clicked_lat = map_data['last_clicked']['lat']
-            clicked_lon = map_data['last_clicked']['lng']
-            st.session_state.map_clicked_lat = clicked_lat
-            st.session_state.map_clicked_lon = clicked_lon
+            st.session_state.map_clicked_lat = map_data['last_clicked']['lat']
+            st.session_state.map_clicked_lon = map_data['last_clicked']['lng']
         
         if st.session_state.get('map_clicked_lat'):
-            st.success(f"📍 **Selected Location:** {st.session_state.map_clicked_lat:.4f}°N, {st.session_state.map_clicked_lon:.4f}°E")
-            
-            # Optional: manual fine-tuning
-            with st.expander("🎯 Fine-tune coordinates"):
-                col_ft1, col_ft2, col_ft3 = st.columns(3)
-                with col_ft1:
-                    fine_lat = st.number_input("Latitude", value=float(st.session_state.map_clicked_lat), 
-                                               min_value=-90.0, max_value=90.0, step=0.001, key="fine_lat")
-                with col_ft2:
-                    fine_lon = st.number_input("Longitude", value=float(st.session_state.map_clicked_lon), 
-                                               min_value=-180.0, max_value=180.0, step=0.001, key="fine_lon")
-                with col_ft3:
-                    if st.button("Update Coordinates"):
-                        st.session_state.map_clicked_lat = fine_lat
-                        st.session_state.map_clicked_lon = fine_lon
-                        st.rerun()
-        else:
-            st.warning("👆 Click on the map to select your location")
+            st.success(f"Selected: {st.session_state.map_clicked_lat:.4f}°N, {st.session_state.map_clicked_lon:.4f}°E")
     
-    st.markdown("---")
+    st.markdown("")  # Spacing
     
     with col_loc2:
-        fetch_location = st.button("🔄 Refresh Location & Data", type="secondary")
+        fetch_location = st.button("Fetch data", type="primary")
     
     # Determine if we should fetch location
     should_fetch = fetch_location or st.session_state.location is None
     
     if should_fetch and st.session_state.ip_consent:
-        if ip_method == "🗺️ Select on map":
+        if location_tab == "Select on map":
             if st.session_state.get('map_clicked_lat'):
-                # Use map-selected coordinates
                 st.session_state.location = create_location_from_coords(
                     st.session_state.map_clicked_lat, 
                     st.session_state.map_clicked_lon
@@ -2490,26 +2593,24 @@ if data_source == "🛰️ Auto-fetch from satellites (using my location)":
                 lon = st.session_state.location['longitude']
                 st.session_state.location['elevation'] = get_elevation(lat, lon)
             else:
-                st.warning("⚠️ Please click on the map to select a location first.")
+                st.warning("Please select a location on the map first.")
                 should_fetch = False
         else:
-            # Use IP-based location
-            with st.spinner("📡 Fetching your location from IP address..."):
+            with st.spinner("Getting location..."):
                 st.session_state.location = get_user_location(st.session_state.user_ip)
                 lat = st.session_state.location['latitude']
                 lon = st.session_state.location['longitude']
                 st.session_state.location['elevation'] = get_elevation(lat, lon)
         
         if should_fetch and st.session_state.location:
-            # Create progress tracking
             progress_bar = st.progress(0)
             status_text = st.empty()
             
             def update_progress(progress, text):
                 progress_bar.progress(progress)
-                status_text.text(text)
+                status_text.text(text.replace("🛰️ ", "").replace("Fetching ", "Loading "))
             
-            with st.spinner("🛰️ Fetching satellite data from multiple sources..."):
+            with st.spinner("Loading satellite data..."):
                 lat = st.session_state.location['latitude']
                 lon = st.session_state.location['longitude']
                 
@@ -2524,355 +2625,152 @@ if data_source == "🛰️ Auto-fetch from satellites (using my location)":
             progress_bar.empty()
             status_text.empty()
     elif should_fetch and not st.session_state.ip_consent:
-        st.warning("⚠️ Please allow IP detection or select a location on the map first.")
+        st.warning("Please detect your location or select one on the map.")
     
     # Display location info
     if st.session_state.location:
         loc = st.session_state.location
         
-        # Build the success message with IP info if available
-        ip_info = f"**🌐 IP Address:** `{loc.get('ip', 'N/A')}`  \n" if loc.get('ip') and loc.get('ip') != 'Unknown' else ""
-        source_info = f"**📡 Data Source:** {loc.get('source', 'Unknown')}  \n" if loc.get('source') else ""
+        col_info1, col_info2, col_info3 = st.columns(3)
+        with col_info1:
+            st.markdown(f"**{loc['city']}, {loc['region']}**")
+            st.caption(loc['country'])
+        with col_info2:
+            st.markdown(f"**{loc['latitude']:.4f}°N, {loc['longitude']:.4f}°E**")
+            st.caption("Coordinates")
+        with col_info3:
+            elev = loc.get('elevation', 'Unknown')
+            st.markdown(f"**{elev}m**")
+            st.caption("Elevation")
         
-        st.success(f"""
-        **📍 Detected Location:** {loc['city']}, {loc['region']}, {loc['country']}  
-        **🗺️ Coordinates:** {loc['latitude']:.4f}°N, {loc['longitude']:.4f}°E  
-        **⛰️ Elevation:** {loc.get('elevation', 'Unknown')}m  
-        **🕐 Timezone:** {loc['timezone']}  
-        {ip_info}{source_info}
-        """)
-        
-        # Manual coordinate adjustment
-        with st.expander("🎯 Adjust Location Manually", expanded=False):
-            st.markdown("**Click on the map to select your location, or enter coordinates below:**")
-            
-            # Initialize map location from current location
-            map_lat = loc['latitude']
-            map_lon = loc['longitude']
-            
-            # Check if user clicked on map previously
-            if 'map_clicked_lat' in st.session_state and st.session_state.map_clicked_lat is not None:
-                map_lat = st.session_state.map_clicked_lat
-                map_lon = st.session_state.map_clicked_lon
-            
-            # Create the interactive map
-            m = folium.Map(
-                location=[map_lat, map_lon],
-                zoom_start=10,
-                tiles='OpenStreetMap'
-            )
-            
-            # Add terrain/satellite layer options
-            folium.TileLayer(
-                tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-                attr='Esri',
-                name='Satellite',
-                overlay=False
-            ).add_to(m)
-            
-            folium.TileLayer(
-                tiles='https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
-                attr='OpenTopoMap',
-                name='Terrain',
-                overlay=False
-            ).add_to(m)
-            
-            # Add layer control
-            folium.LayerControl().add_to(m)
-            
-            # Add current marker
-            folium.Marker(
-                [map_lat, map_lon],
-                popup=f"Selected Location<br>Lat: {map_lat:.4f}<br>Lon: {map_lon:.4f}",
-                tooltip="📍 Current Selection",
-                icon=folium.Icon(color='red', icon='info-sign')
-            ).add_to(m)
-            
-            # Add a circle to show approximate area
-            folium.Circle(
-                [map_lat, map_lon],
-                radius=5000,  # 5km radius
-                color='blue',
-                fill=True,
-                fill_opacity=0.1,
-                popup="5km radius"
-            ).add_to(m)
-            
-            # Display the map and capture clicks
-            map_data = st_folium(
-                m,
-                width=700,
-                height=400,
-                key="location_map",
-                returned_objects=["last_clicked"]
-            )
-            
-            # Handle map click
-            if map_data and map_data.get('last_clicked'):
-                clicked_lat = map_data['last_clicked']['lat']
-                clicked_lon = map_data['last_clicked']['lng']
-                st.session_state.map_clicked_lat = clicked_lat
-                st.session_state.map_clicked_lon = clicked_lon
-                st.info(f"📍 **Clicked Location:** {clicked_lat:.4f}°N, {clicked_lon:.4f}°E")
-            
-            st.markdown("---")
-            st.markdown("**Or enter coordinates manually:**")
-            
-            col_coord1, col_coord2, col_coord3 = st.columns(3)
+        # Expandable adjustment
+        with st.expander("Adjust location"):
+            col_coord1, col_coord2 = st.columns(2)
             with col_coord1:
-                # Use clicked coordinates if available, otherwise use current location
-                default_lat = st.session_state.get('map_clicked_lat') or loc['latitude']
-                new_lat = st.number_input("Latitude", value=float(default_lat), min_value=-90.0, max_value=90.0, step=0.01, key="manual_lat")
+                new_lat = st.number_input("Latitude", value=float(loc['latitude']), min_value=-90.0, max_value=90.0, step=0.01)
             with col_coord2:
-                default_lon = st.session_state.get('map_clicked_lon') or loc['longitude']
-                new_lon = st.number_input("Longitude", value=float(default_lon), min_value=-180.0, max_value=180.0, step=0.01, key="manual_lon")
-            with col_coord3:
-                elev_value = loc.get('elevation') or 1500
-                new_elev = st.number_input("Elevation (m)", value=int(elev_value), min_value=0, max_value=9000, step=100, key="manual_elev")
+                new_lon = st.number_input("Longitude", value=float(loc['longitude']), min_value=-180.0, max_value=180.0, step=0.01)
             
-            col_btn1, col_btn2 = st.columns(2)
-            with col_btn1:
-                if st.button("📡 Fetch Data for Selected Location", type="primary"):
-                    # Use map-clicked coordinates if available, otherwise use manual input
-                    final_lat = st.session_state.get('map_clicked_lat') or new_lat
-                    final_lon = st.session_state.get('map_clicked_lon') or new_lon
-                    
-                    progress_bar = st.progress(0)
-                    status_text = st.empty()
-                    
-                    def update_progress(progress, text):
-                        progress_bar.progress(progress)
-                        status_text.text(text)
-                    
-                    with st.spinner("🛰️ Downloading data for new location..."):
-                        st.session_state.location['latitude'] = final_lat
-                        st.session_state.location['longitude'] = final_lon
-                        st.session_state.location['elevation'] = new_elev
-                        
-                        # Get reverse geocoding for the new location
-                        reverse_geo = get_reverse_geocode(final_lat, final_lon)
-                        if reverse_geo:
-                            st.session_state.location['city'] = reverse_geo.get('city', 'Unknown')
-                            st.session_state.location['region'] = reverse_geo.get('region', 'Unknown')
-                            st.session_state.location['country'] = reverse_geo.get('country', 'Unknown')
-                        
-                        st.session_state.satellite_raw = fetch_all_satellite_data(final_lat, final_lon, update_progress)
-                        st.session_state.env_data, st.session_state.data_sources = process_satellite_data(
-                            st.session_state.satellite_raw,
-                            new_elev
-                        )
-                    
-                    # Clear map click state
-                    st.session_state.map_clicked_lat = None
-                    st.session_state.map_clicked_lon = None
-                    
-                    progress_bar.empty()
-                    status_text.empty()
-                    st.rerun()
-            
-            with col_btn2:
-                if st.button("🔄 Reset to Detected Location"):
-                    st.session_state.map_clicked_lat = None
-                    st.session_state.map_clicked_lon = None
-                    st.rerun()
+            if st.button("Update location"):
+                progress_bar = st.progress(0)
+                status_text = st.empty()
+                
+                def update_progress(progress, text):
+                    progress_bar.progress(progress)
+                    status_text.text(text.replace("🛰️ ", ""))
+                
+                st.session_state.location['latitude'] = new_lat
+                st.session_state.location['longitude'] = new_lon
+                st.session_state.location['elevation'] = get_elevation(new_lat, new_lon)
+                
+                reverse_geo = get_reverse_geocode(new_lat, new_lon)
+                if reverse_geo:
+                    st.session_state.location['city'] = reverse_geo.get('city', 'Unknown')
+                    st.session_state.location['region'] = reverse_geo.get('region', 'Unknown')
+                    st.session_state.location['country'] = reverse_geo.get('country', 'Unknown')
+                
+                st.session_state.satellite_raw = fetch_all_satellite_data(new_lat, new_lon, update_progress)
+                st.session_state.env_data, st.session_state.data_sources = process_satellite_data(
+                    st.session_state.satellite_raw,
+                    st.session_state.location['elevation']
+                )
+                
+                progress_bar.empty()
+                status_text.empty()
+                st.rerun()
     
-    # Display satellite data status
+    # Display satellite data status (compact version)
     if st.session_state.satellite_raw:
-        st.markdown("### 🛰️ Data Sources Status")
-        
         raw = st.session_state.satellite_raw
         
-        # Show summary
+        # Compact status summary
         if 'summary' in raw:
             summary = raw['summary']
-            st.info(f"📊 **Data Fetch Summary:** {summary['successful_sources']}/{summary['total_sources']} sources successful ({summary['success_rate']})")
+            success_count = summary['successful_sources']
+            total_count = summary['total_sources']
+            
+            st.markdown(f"""
+            <div style="background: #f9fafb; padding: 0.75rem; border-radius: 8px; margin-top: 1rem;">
+                <span style="color: #059669; font-weight: 500;">● {success_count} sources connected</span>
+                <span style="color: #6b7280; margin-left: 1rem;">of {total_count} available</span>
+            </div>
+            """, unsafe_allow_html=True)
         
-        # Create columns for satellite sources - Row 1
-        st.markdown("**🛰️ Satellite Data:**")
-        cols = st.columns(4)
-        
-        source_status_row1 = [
-            ("🌍 ERA5", raw['data_quality'].get('ERA5 Reanalysis') == 'success'),
-            ("🛰️ MODIS/VIIRS", raw['data_quality'].get('NASA Earthdata (MODIS/VIIRS)') == 'success'),
-            ("☀️ GOES/CERES", raw['data_quality'].get('NASA POWER (GOES/CERES)') == 'success'),
-            ("🇪🇺 Sentinel", raw['data_quality'].get('Sentinel (Copernicus)') == 'success'),
-        ]
-        
-        for i, (name, available) in enumerate(source_status_row1):
-            with cols[i]:
-                if available:
-                    st.success(f"✅ {name}")
-                else:
-                    st.warning(f"⚠️ {name}")
-        
-        # Row 2 - Additional satellite sources
-        st.markdown("**🛰️ Additional Satellites:**")
-        cols2 = st.columns(4)
-        
-        source_status_row2 = [
-            ("💧 SMAP", raw['data_quality'].get('SMAP Soil Moisture') == 'success'),
-            ("🌧️ GPM", raw['data_quality'].get('GPM Precipitation') == 'success'),
-            ("🏔️ Landsat", raw['data_quality'].get('Landsat Snow Cover') == 'success'),
-            ("⛰️ ASTER DEM", raw['data_quality'].get('ASTER DEM/Terrain') == 'success'),
-        ]
-        
-        for i, (name, available) in enumerate(source_status_row2):
-            with cols2[i]:
-                if available:
-                    st.success(f"✅ {name}")
-                else:
-                    st.warning(f"⚠️ {name}")
-        
-        # Row 3 - Weather Station Networks
-        st.markdown("**📍 Weather Station Networks:**")
-        cols3 = st.columns(4)
-        
-        source_status_row3 = [
-            ("📡 SNOTEL", raw['data_quality'].get('SNOTEL (Western US)') == 'success'),
-            ("🌐 MesoWest", raw['data_quality'].get('MesoWest Stations') == 'success'),
-            ("🏛️ WMO", raw['data_quality'].get('WMO Official Stations') == 'success'),
-            ("⛷️ Ski Resorts", raw['data_quality'].get('Ski Resort Weather') == 'success'),
-        ]
-        
-        for i, (name, available) in enumerate(source_status_row3):
-            with cols3[i]:
-                if available:
-                    st.success(f"✅ {name}")
-                else:
-                    st.warning(f"⚠️ {name}")
-        
-        # Row 4 - Model & Analysis Products
-        st.markdown("**🔮 Model & Analysis Products:**")
-        cols4 = st.columns(4)
-        
-        source_status_row4 = [
-            ("🌐 Open-Meteo", raw['data_quality'].get('Open-Meteo (Real-time)') == 'success'),
-            ("❄️ NSIDC", raw['data_quality'].get('NSIDC Snow Products') == 'success'),
-            ("🔮 Ensemble", raw['data_quality'].get('Multi-Model Ensemble') == 'success'),
-            ("📍 Snow Model", raw['data_quality'].get('Snowpack Model') == 'success'),
-        ]
-        
-        for i, (name, available) in enumerate(source_status_row4):
-            with cols4[i]:
-                if available:
-                    st.success(f"✅ {name}")
-                else:
-                    st.warning(f"⚠️ {name}")
-        
-        # Show detailed data
-        with st.expander("📊 View Detailed Satellite Data"):
-            for source_name, source_data in raw['sources'].items():
-                st.markdown(f"**{source_name}**")
-                if isinstance(source_data, dict):
-                    # Filter out large arrays for display
-                    display_data = {k: v for k, v in source_data.items() 
-                                   if not isinstance(v, list) or len(str(v)) < 200}
-                    st.json(display_data)
-                st.markdown("---")
+        # Compact expandable details
+        with st.expander("View data sources"):
+            cols = st.columns(3)
+            all_sources = list(raw['data_quality'].items())
+            
+            for i, (name, status) in enumerate(all_sources):
+                col_idx = i % 3
+                with cols[col_idx]:
+                    # Clean up source name
+                    clean_name = name.replace("(", "").replace(")", "").replace("Western US", "").strip()
+                    if len(clean_name) > 20:
+                        clean_name = clean_name[:20] + "..."
+                    
+                    if status == 'success':
+                        st.markdown(f"<span class='status-dot status-online'></span>{clean_name}", unsafe_allow_html=True)
+                    else:
+                        st.markdown(f"<span class='status-dot status-partial'></span>{clean_name}", unsafe_allow_html=True)
     
     # Display fetched data summary
     if st.session_state.env_data:
-        st.markdown("### 📈 Retrieved Parameters Summary")
+        st.markdown('<p class="section-header">Current Conditions</p>', unsafe_allow_html=True)
         
         env = st.session_state.env_data
         
-        # Key metrics
+        # Key metrics in a cleaner layout
         col1, col2, col3, col4 = st.columns(4)
         with col1:
-            st.metric("🌡️ Air Temp", f"{env.get('TA', 0):.1f}°C", 
-                     delta=f"{env.get('TA', 0) - env.get('TA_daily', 0):.1f}°C from daily avg")
+            temp = env.get('TA', 0)
+            st.metric("Temperature", f"{temp:.1f}°C")
         with col2:
-            st.metric("❄️ Snow Depth", f"{env.get('max_height', 0)*100:.0f} cm",
-                     delta=f"{env.get('max_height_1_diff', 0)*100:.1f} cm (24h)")
+            snow = env.get('max_height', 0) * 100
+            snow_change = env.get('max_height_1_diff', 0) * 100
+            st.metric("Snow Depth", f"{snow:.0f} cm", delta=f"{snow_change:+.0f} cm/24h")
         with col3:
-            st.metric("☀️ Solar Radiation", f"{env.get('ISWR_daily', 0):.0f} W/m²")
+            radiation = env.get('ISWR_daily', 0)
+            st.metric("Solar Radiation", f"{radiation:.0f} W/m²")
         with col4:
-            st.metric("⚠️ Stability Index", f"{env.get('S5', 2.5):.2f}")
-        
-        # Second row of metrics
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            st.metric("🌡️ Snow Surface Temp", f"{env.get('TSS_mod', 0):.1f}°C")
-        with col2:
-            st.metric("💧 Liquid Water", f"{env.get('water', 0):.1f} kg/m²")
-        with col3:
-            st.metric("🔥 Sensible Heat", f"{env.get('Qs', 0):.1f} W/m²")
-        with col4:
-            st.metric("💨 Latent Heat", f"{env.get('Ql', 0):.1f} W/m²")
-        
-        # Data sources used
-        with st.expander("📡 Data Source Attribution"):
-            # Group by source
-            source_params = {}
-            for param, source in st.session_state.data_sources:
-                if source not in source_params:
-                    source_params[source] = []
-                source_params[source].append(param)
-            
-            for source, params in source_params.items():
-                quality_class = "data-quality-good" if "ERA5" in source or "MODIS" in source or "GOES" in source else "data-quality-estimated"
-                st.markdown(f'<div class="satellite-source"><span class="{quality_class}">{source}</span>: {", ".join(params)}</div>', unsafe_allow_html=True)
-            
-            st.markdown("""
-            **Legend:**
-            - <span class="data-quality-good">Green</span>: Direct satellite/reanalysis data
-            - <span class="data-quality-estimated">Yellow</span>: Physics-based calculations
-            """, unsafe_allow_html=True)
+            stability = env.get('S5', 2.5)
+            st.metric("Stability Index", f"{stability:.2f}")
         
         # Update session state inputs
         for key, value in env.items():
             if key in features_for_input:
                 st.session_state.inputs[key] = value
-        
-        st.info("✅ **Satellite data loaded!** Values below have been auto-populated from satellite sources. You can still adjust them manually if needed.")
-    
-    st.markdown("---")
 
-# Sidebar
-st.sidebar.header("⚙️ Model Settings")
+st.markdown("")  # Spacing
+
+# Sidebar - minimal and clean
+st.sidebar.markdown("### About")
 st.sidebar.markdown("""
-### 🛰️ Satellite Sources
-This app integrates data from:
+This tool assesses avalanche risk using real-time data from satellite systems and weather stations.
 
-**Direct Measurements:**
-- **MODIS** (Terra/Aqua) - Snow cover, LST
-- **VIIRS** (Suomi NPP) - Snow products
-- **ERA5** - Reanalysis (T, snow, radiation)
-- **GOES/CERES** - Radiation fluxes
-- **Sentinel** - High-res snow mapping
-
-**Physics Calculations:**
-- Snow surface temperature
-- Heat fluxes (Qs, Ql)
-- Liquid water content
-- Stability indices
+**Data Sources:**
+- MODIS & VIIRS satellites
+- ERA5 reanalysis
+- SNOTEL network
+- Local weather stations
 """)
 
-# Show satellite info in sidebar
-with st.sidebar.expander("ℹ️ About Satellite Data"):
-    for sat_name, sat_info in SATELLITE_SOURCES.items():
-        st.markdown(f"**{sat_info['name']}**")
-        st.markdown(f"- Provider: {sat_info['provider']}")
-        st.markdown(f"- Resolution: {sat_info['resolution']}")
-        st.markdown(f"- Products: {', '.join(sat_info['products'][:2])}")
-        st.markdown("---")
+st.sidebar.markdown("---")
+st.sidebar.caption("Always verify with local avalanche centers before backcountry travel.")
 
 # Helper function
 def get_input_value(key, default=0.0, min_val=None, max_val=None):
     value = st.session_state.inputs.get(key, default)
     if value is None:
         value = default
-    # Clamp value to min/max if provided
     if min_val is not None and value < min_val:
         value = min_val
     if max_val is not None and value > max_val:
         value = max_val
     return value
 
-st.markdown("---")
-
 # Prediction section
-st.subheader("🎯 Avalanche Risk Prediction")
+st.markdown('<p class="section-header">Risk Assessment</p>', unsafe_allow_html=True)
 
 # Prepare input data from satellite data (using NaN for missing values instead of 0)
 if st.session_state.env_data:
@@ -2885,7 +2783,7 @@ if st.session_state.env_data:
 col1, col2, col3 = st.columns([1, 2, 1])
 
 with col2:
-    predict_button = st.button("🔮 Predict Avalanche Risk", type="primary", use_container_width=True)
+    predict_button = st.button("Run Assessment", type="primary", use_container_width=True)
 
 if predict_button:
     # Create input data - use NaN for missing values (imputer will handle them)
@@ -3086,118 +2984,112 @@ if predict_button:
         
         confidence = min(max(risk_score, 0.0), 1.0)
     
-    st.markdown("---")
+    st.markdown("")  # Spacing
     
     col1, col2, col3 = st.columns([1, 2, 1])
     
     with col2:
-        # Check if there's no snow - no avalanche danger possible
+        # Check if there's no snow
         snow_depth = st.session_state.inputs.get('max_height', 0)
         if snow_depth is None or snow_depth <= 0:
             risk_level = "NONE"
-            risk_class = "risk-low"
-            risk_emoji = "✅"
-            risk_message = "No snow detected - No avalanche danger"
+            risk_class = "risk-none"
+            risk_message = "No snow cover detected"
             confidence = 0.0
         elif confidence >= 0.7:
             risk_level = "HIGH"
             risk_class = "risk-high"
-            risk_emoji = "🔴"
-            risk_message = "DANGER - Avalanche conditions are likely!"
+            risk_message = "Dangerous conditions likely"
         elif confidence >= 0.4:
             risk_level = "MODERATE"
             risk_class = "risk-medium"
-            risk_emoji = "🟡"
-            risk_message = "CAUTION - Avalanche conditions are possible"
+            risk_message = "Exercise caution"
         else:
             risk_level = "LOW"
             risk_class = "risk-low"
-            risk_emoji = "🟢"
-            risk_message = "Lower risk - but always exercise caution"
+            risk_message = "Conditions appear stable"
         
         st.markdown(f"""
-        <div class="{risk_class}">
-            <h2>{risk_emoji} {risk_level} RISK</h2>
-            <h3>Confidence: {confidence*100:.1f}%</h3>
-            <p>{risk_message}</p>
+        <div class="risk-card {risk_class}">
+            <div class="risk-label">Avalanche Risk</div>
+            <div class="risk-level">{risk_level}</div>
+            <div class="risk-confidence">{confidence*100:.0f}% confidence</div>
         </div>
         """, unsafe_allow_html=True)
+        
+        st.caption(risk_message)
     
-    st.markdown("### Risk Level Gauge")
-    st.progress(confidence)
-    
-    st.markdown("### 📈 Key Risk Factors")
+    # Key factors
+    st.markdown('<p class="section-header">Contributing Factors</p>', unsafe_allow_html=True)
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
-        st.metric("Stability Index", f"{st.session_state.inputs.get('S5', 0):.2f}", 
-                  delta=f"{st.session_state.inputs.get('S5', 0) - 1:.2f}")
-    
+        st.metric("Stability", f"{st.session_state.inputs.get('S5', 0):.2f}")
     with col2:
-        st.metric("Air Temp", f"{st.session_state.inputs.get('TA', 0):.1f}°C",
-                  delta=f"{st.session_state.inputs.get('TA_daily', 0) - st.session_state.inputs.get('TA', 0):.1f}°C")
-    
+        st.metric("Temperature", f"{st.session_state.inputs.get('TA', 0):.1f}°C")
     with col3:
-        st.metric("Snow Height", f"{st.session_state.inputs.get('max_height', 0):.2f}m",
-                  delta=f"{st.session_state.inputs.get('max_height_1_diff', 0):.2f}m")
-    
+        st.metric("Snow Depth", f"{st.session_state.inputs.get('max_height', 0):.2f}m")
     with col4:
-        st.metric("Solar Radiation", f"{st.session_state.inputs.get('ISWR_daily', 0):.0f} W/m²",
-                  delta="Daily avg")
+        st.metric("Radiation", f"{st.session_state.inputs.get('ISWR_daily', 0):.0f} W/m²")
     
-    st.markdown("### 🛡️ Safety Recommendations")
+    # Recommendations
+    st.markdown('<p class="section-header">Recommendations</p>', unsafe_allow_html=True)
     
     if confidence >= 0.7:
-        st.error("""
-        **HIGH RISK ACTIONS:**
-        - ❌ Avoid all avalanche terrain
-        - 🚫 Do not travel on or below steep slopes
-        - 📢 Check local avalanche advisories
-        - 🏠 Consider postponing backcountry travel
-        """)
+        st.markdown("""
+        <div class="warning-box">
+            <strong>High Risk Actions:</strong><br>
+            • Avoid all avalanche terrain<br>
+            • Do not travel on or below steep slopes<br>
+            • Check local avalanche advisories<br>
+            • Consider postponing backcountry travel
+        </div>
+        """, unsafe_allow_html=True)
     elif confidence >= 0.4:
-        st.warning("""
-        **MODERATE RISK ACTIONS:**
-        - ⚠️ Use caution in avalanche terrain
-        - 🎒 Carry avalanche safety equipment
-        - 👥 Travel with partners
-        - 📍 Identify safe zones and escape routes
-        """)
+        st.markdown("""
+        <div class="warning-box">
+            <strong>Moderate Risk Actions:</strong><br>
+            • Use caution in avalanche terrain<br>
+            • Carry avalanche safety equipment<br>
+            • Travel with partners<br>
+            • Identify safe zones and escape routes
+        </div>
+        """, unsafe_allow_html=True)
     else:
-        st.success("""
-        **LOWER RISK ACTIONS:**
-        - ✅ Conditions appear more stable
-        - 🎒 Still carry avalanche safety gear
-        - 👀 Remain vigilant for changing conditions
-        - 📻 Check for updated forecasts
-        """)
+        st.markdown("""
+        <div class="info-box">
+            <strong>Lower Risk Actions:</strong><br>
+            • Conditions appear more stable<br>
+            • Still carry avalanche safety gear<br>
+            • Remain vigilant for changing conditions<br>
+            • Check for updated forecasts
+        </div>
+        """, unsafe_allow_html=True)
 
 # Footer
+st.markdown("")
 st.markdown("---")
 
-# Comprehensive data sources attribution
-with st.expander("📡 Complete Data Sources & Parameter Attribution"):
+# Minimal footer with expandable details
+with st.expander("Data sources and methodology"):
     st.markdown("""
-    ### 🛰️ Multi-Source Data Integration System
+    **Satellite Data Sources:**
+    MODIS (NASA), VIIRS (NOAA), ERA5 (ECMWF), GOES (NOAA), Sentinel (ESA)
     
-    This application fetches **38+ avalanche prediction parameters** from **22 different satellite, weather station, and model sources**:
+    **Weather Station Networks:**
+    SNOTEL (NRCS), MesoWest, WMO stations
     
-    ---
+    **Methodology:**
+    This tool combines satellite observations with physics-based snowpack modeling 
+    to estimate avalanche risk. The stability index (S5) is calculated from snow depth, 
+    new snow accumulation, temperature trends, precipitation type, wind speed, and 
+    liquid water content.
     
-    #### 🛰️ Satellite Data Sources (12)
-    
-    | # | Satellite/Source | Organization | Data Products | Resolution | Update Freq |
-    |---|-----------------|--------------|---------------|------------|-------------|
-    | 1 | **MODIS** (Terra/Aqua) | NASA | Snow Cover (MOD10A1), LST (MOD11A1), NDSI | 500m-1km | 1-2 days |
-    | 2 | **VIIRS** (Suomi NPP/NOAA-20) | NASA/NOAA | Snow Cover (VNP10A1), Land Surface Temp | 375-750m | Daily |
-    | 3 | **ERA5** Reanalysis | ECMWF/Copernicus | Temperature, Pressure, Radiation, Snow Depth | ~31km | Hourly |
-    | 4 | **ERA5-Land** | ECMWF/Copernicus | High-res land surface variables | ~9km | Hourly |
-    | 5 | **GOES-16/17/18** | NOAA | Cloud Cover, Radiation (via CERES) | 0.5-2km | 5-15 min |
-    | 6 | **Sentinel-2/3** | ESA/Copernicus | High-res Snow Mapping, SAR | 10m-1km | 5 days |
-    | 7 | **CERES** (Aqua/Terra) | NASA | Radiation Budget (SW/LW) | 1° | Daily |
-    | 8 | **NASA POWER** | NASA | MERRA-2 derived radiation, temp | 0.5° | Daily |
-    | 9 | **SMAP** | NASA | Soil Moisture, Freeze/Thaw State | 9km | 2-3 days |
-    | 10 | **GPM** (IMERG) | NASA/JAXA | Global Precipitation Measurement | 10km | 30 min |
+    **Disclaimer:**
+    This tool provides estimates based on available data and should not replace 
+    professional avalanche forecasts. Always check with local avalanche centers 
+    and exercise proper backcountry safety protocols.
+    """)
     | 11 | **Landsat 8/9** | NASA/USGS | High-res Snow Mapping (30m) | 30m | 16 days |
     | 12 | **ASTER DEM** | NASA/METI | Terrain Analysis, Slope, Aspect | 30m | Static |
     
@@ -3306,67 +3198,4 @@ with st.expander("📡 Complete Data Sources & Parameter Attribution"):
     
     ---
     
-    #### 🔬 Physics-Based Calculation Methods
-    
-    **Sensible Heat Flux (Qs):**
-    ```
-    Qs = ρ × cp × Ch × U × (Ta - Ts)
-    Where: ρ=air density, cp=1005 J/kg/K, Ch=0.002, U=wind speed
-    ```
-    
-    **Latent Heat Flux (Ql):**
-    ```
-    Ql = ρ × Ls × Ce × U × (qa - qs)
-    Where: Ls=2.83×10⁶ J/kg (sublimation), Ce=0.002
-    ```
-    
-    **Stefan-Boltzmann (Longwave Radiation):**
-    ```
-    OLWR = ε × σ × T⁴
-    Where: ε=0.98 (snow emissivity), σ=5.67×10⁻⁸ W/m²/K⁴
-    ```
-    
-    **Liquid Water Content:**
-    ```
-    Melt = DDF × max(Ta, 0) + (ISWR × 0.8) / (Lf × 1000)
-    Where: DDF=4 mm/°C/day, Lf=334 kJ/kg
-    ```
-    
-    ---
-    
-    #### 📡 Data Source Priority System
-    
-    This app uses a priority-based multi-source system to get the most accurate data:
-    
-    | Priority | Source Type | Example | Why First? |
-    |----------|-------------|---------|------------|
-    | 1 | Ground Stations | SNOTEL | Direct measurements at high elevation |
-    | 2 | Regional Networks | MesoWest | Dense coverage, real-time |
-    | 3 | Official Stations | WMO | Quality-controlled observations |
-    | 4 | Satellite Reanalysis | ERA5 | Complete coverage, gap-filled |
-    | 5 | Model Products | Open-Meteo | Multi-model fusion |
-    
-    ---
-    
-    #### ⚠️ Data Quality & Limitations
-    
-    | Data Type | Reliability | Notes |
-    |-----------|-------------|-------|
-    | 🟢 SNOTEL/Ground Stations | Highest | Direct snow measurements at site |
-    | 🟢 MesoWest Network | High | Real-time, dense coverage |
-    | 🟢 Direct Satellite | High | MODIS, VIIRS, CERES measurements |
-    | 🟢 ERA5 Reanalysis | High | Model-observation fusion |
-    | 🟡 Physics Calculations | Medium | Based on established equations |
-    | 🟠 Estimated Parameters | Variable | Require ground validation |
-    
-    **Always consult official avalanche forecasts for critical decisions!**
     """)
-
-st.markdown("""
-<div style='text-align: center; color: gray;'>
-    <p>🏔️ Avalanche Prediction System | Multi-Satellite Integration</p>
-    <p><small>Data from: NASA (MODIS, VIIRS, CERES, POWER), Copernicus (ERA5, Sentinel), NOAA (GOES), NSIDC</small></p>
-    <p><small>38 parameters from 8 satellite/data sources | Physics-informed calculations</small></p>
-    <p><small>⚠️ This tool provides risk estimates only. Always consult official avalanche forecasts.</small></p>
-</div>
-""", unsafe_allow_html=True)
