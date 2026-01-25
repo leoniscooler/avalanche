@@ -1,7 +1,9 @@
 streamlit
-numpy
 pandas
-scikit-learn
+numpy
+joblib
+requests
 tensorflow
-seaborn
-matplotlib
+scikit-learn
+folium
+streamlit-folium
