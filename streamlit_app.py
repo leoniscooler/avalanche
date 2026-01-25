@@ -127,6 +127,105 @@ def create_location_from_coords(lat, lon):
         'source': 'GPS/Browser Geolocation'
     }
 
+def get_user_location(ip_address=None):
+    """Get user's location from IP address (auto-detected or provided)"""
+    # If IP provided, try to geolocate it
+    if ip_address:
+        try:
+            # Try multiple geolocation services
+            services = [
+                f'https://ipapi.co/{ip_address}/json/',
+                f'http://ip-api.com/json/{ip_address}'
+            ]
+            
+            for service in services:
+                try:
+                    response = requests.get(service, timeout=5)
+                    if response.status_code == 200:
+                        data = response.json()
+                        
+                        if 'ipapi.co' in service:
+                            return {
+                                'ip': ip_address,
+                                'city': data.get('city', 'Unknown'),
+                                'region': data.get('region', 'Unknown'),
+                                'country': data.get('country_name', 'Unknown'),
+                                'latitude': data.get('latitude', 46.8),
+                                'longitude': data.get('longitude', 9.8),
+                                'timezone': data.get('timezone', 'UTC'),
+                                'elevation': None,
+                                'source': 'IP Geolocation (ipapi.co)'
+                            }
+                        elif 'ip-api.com' in service:
+                            return {
+                                'ip': ip_address,
+                                'city': data.get('city', 'Unknown'),
+                                'region': data.get('regionName', 'Unknown'),
+                                'country': data.get('country', 'Unknown'),
+                                'latitude': data.get('lat', 46.8),
+                                'longitude': data.get('lon', 9.8),
+                                'timezone': data.get('timezone', 'UTC'),
+                                'elevation': None,
+                                'source': 'IP Geolocation (ip-api.com)'
+                            }
+                except:
+                    continue
+        except:
+            pass
+    
+    # Fallback: try to auto-detect IP and geolocate
+    try:
+        response = requests.get('https://ipapi.co/json/', timeout=5)
+        if response.status_code == 200:
+            data = response.json()
+            return {
+                'ip': data.get('ip', 'Unknown'),
+                'city': data.get('city', 'Unknown'),
+                'region': data.get('region', 'Unknown'),
+                'country': data.get('country_name', 'Unknown'),
+                'latitude': data.get('latitude', 46.8),
+                'longitude': data.get('longitude', 9.8),
+                'timezone': data.get('timezone', 'UTC'),
+                'elevation': None,
+                'source': 'IP Geolocation (auto-detected)'
+            }
+    except Exception as e:
+        st.warning(f"Could not fetch location: {e}")
+    
+    # Default fallback
+    return {
+        'ip': 'Unknown',
+        'city': 'Davos',
+        'region': 'Graubünden',
+        'country': 'Switzerland',
+        'latitude': 46.8,
+        'longitude': 9.8,
+        'timezone': 'Europe/Zurich',
+        'elevation': 1560,
+        'source': 'Default (Davos, Switzerland)'
+    }
+
+def get_ip_address():
+    """Get user's public IP address"""
+    ip_services = [
+        'https://api.ipify.org?format=json',
+        'https://ipinfo.io/json',
+        'https://api.myip.com'
+    ]
+    
+    for service in ip_services:
+        try:
+            response = requests.get(service, timeout=5)
+            if response.status_code == 200:
+                data = response.json()
+                ip = data.get('ip') or data.get('query') or data.get('origin')
+                if ip:
+                    return ip
+        except:
+            continue
+    
+    return None
+
 # ============================================
 # NASA EARTHDATA (MODIS/VIIRS) DATA FETCHING
 # ============================================
