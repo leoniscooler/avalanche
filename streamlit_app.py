@@ -1903,28 +1903,28 @@ with tab3:
         st.markdown("**Longwave Radiation**")
         st.session_state.inputs['ILWR'] = st.number_input(
             "Incoming LW (W/m²)", 
-            value=float(get_input_value('ILWR', 250.0)), 
-            min_value=100.0, max_value=400.0, step=5.0,
+            value=float(get_input_value('ILWR', 250.0, 0.0, 600.0)), 
+            min_value=0.0, max_value=600.0, step=5.0,
             help="From atmospheric emission (calculated/ERA5)",
             key="input_ILWR"
         )
         st.session_state.inputs['ILWR_daily'] = st.number_input(
             "Daily Incoming LW", 
-            value=float(get_input_value('ILWR_daily', 250.0)), 
-            min_value=100.0, max_value=400.0, step=5.0,
+            value=float(get_input_value('ILWR_daily', 250.0, 0.0, 600.0)), 
+            min_value=0.0, max_value=600.0, step=5.0,
             key="input_ILWR_daily"
         )
         st.session_state.inputs['OLWR'] = st.number_input(
             "Outgoing LW (W/m²)", 
-            value=float(get_input_value('OLWR', 300.0)), 
-            min_value=200.0, max_value=400.0, step=5.0,
+            value=float(get_input_value('OLWR', 300.0, 0.0, 600.0)), 
+            min_value=0.0, max_value=600.0, step=5.0,
             help="From snow surface (calculated from TSS)",
             key="input_OLWR"
         )
         st.session_state.inputs['OLWR_daily'] = st.number_input(
             "Daily Outgoing LW", 
-            value=float(get_input_value('OLWR_daily', 300.0)), 
-            min_value=200.0, max_value=400.0, step=5.0,
+            value=float(get_input_value('OLWR_daily', 300.0, 0.0, 600.0)), 
+            min_value=0.0, max_value=600.0, step=5.0,
             key="input_OLWR_daily"
         )
     
@@ -1932,28 +1932,28 @@ with tab3:
         st.markdown("**Shortwave Radiation**")
         st.session_state.inputs['ISWR_daily'] = st.number_input(
             "Daily SW Total (W/m²)", 
-            value=float(get_input_value('ISWR_daily', 100.0)), 
-            min_value=0.0, max_value=1000.0, step=10.0,
+            value=float(get_input_value('ISWR_daily', 100.0, 0.0, 1500.0)), 
+            min_value=0.0, max_value=1500.0, step=10.0,
             help="From GOES/CERES satellite",
             key="input_ISWR_daily"
         )
         st.session_state.inputs['ISWR_h_daily'] = st.number_input(
             "Daily Horizontal SW", 
-            value=float(get_input_value('ISWR_h_daily', 100.0)), 
-            min_value=0.0, max_value=1000.0, step=10.0,
+            value=float(get_input_value('ISWR_h_daily', 100.0, 0.0, 1500.0)), 
+            min_value=0.0, max_value=1500.0, step=10.0,
             key="input_ISWR_h_daily"
         )
         st.session_state.inputs['ISWR_dir_daily'] = st.number_input(
             "Daily Direct SW", 
-            value=float(get_input_value('ISWR_dir_daily', 50.0)), 
-            min_value=0.0, max_value=800.0, step=10.0,
+            value=float(get_input_value('ISWR_dir_daily', 50.0, 0.0, 1200.0)), 
+            min_value=0.0, max_value=1200.0, step=10.0,
             help="From ERA5",
             key="input_ISWR_dir_daily"
         )
         st.session_state.inputs['ISWR_diff_daily'] = st.number_input(
             "Daily Diffuse SW", 
-            value=float(get_input_value('ISWR_diff_daily', 50.0)), 
-            min_value=0.0, max_value=500.0, step=10.0,
+            value=float(get_input_value('ISWR_diff_daily', 50.0, 0.0, 800.0)), 
+            min_value=0.0, max_value=800.0, step=10.0,
             help="From ERA5",
             key="input_ISWR_diff_daily"
         )
