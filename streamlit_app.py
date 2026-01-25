@@ -14,15 +14,10 @@ from streamlit_folium import st_folium
 # ============================================
 # FEATURE DEFINITIONS (must be early for reference)
 # ============================================
+# Reduced feature set - only 10 features available from satellite data
 features_for_input = [
-    'mean_lwc_3_diff', 'OLWR_daily', 'max_height_1_diff', 'sum_up',
-    'ISWR_h_daily', 'max_lwc', 'S5_daily', 'mean_lwc', 'water_2_diff',
-    'TA_daily', 'Ql', 'ISWR_daily', 'SWE_daily', 'ILWR_daily', 'profile_time',
-    'Qw_daily', 'OLWR', 'ILWR', 'Ql_daily', 'prop_up', 'ISWR_dir_daily',
-    'water_1_diff', 'TSS_mod', 'lowest_3_diff', 'max_height_2_diff', 'max_height',
-    'water', 'prop_wet_2_diff', 'MS_Rain_daily', 'water_3_diff', 'std_lwc',
-    'mean_lwc_2_diff', 'Qs', 'max_height_3_diff', 'S5', 'TA', 'lowest_2_diff',
-    'ISWR_diff_daily'
+    'TA', 'TA_daily', 'max_height', 'max_height_1_diff', 'ISWR_daily',
+    'S5', 'TSS_mod', 'water', 'Qs', 'Ql'
 ]
 
 # ============================================
@@ -2904,11 +2899,11 @@ if predict_button:
     
     input_data = pd.DataFrame([input_values], columns=features_for_input)
     
-    weights_path = "model_weights.weights.h5"
-    config_path = "model_config.json"
-    scaler_path = "scaler.joblib"
-    imputer_path = "imputer.joblib"
-    threshold_path = "threshold.txt"
+    weights_path = "model_reduced_weights.weights.h5"
+    config_path = "model_reduced_config.json"
+    scaler_path = "scaler_reduced.joblib"
+    imputer_path = "imputer_reduced.joblib"
+    threshold_path = "threshold_reduced.txt"
     
     use_ml_model = False
     
