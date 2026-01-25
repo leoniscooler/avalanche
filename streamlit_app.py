@@ -62,8 +62,103 @@ SATELLITE_SOURCES = {
 # LOCATION & ENVIRONMENTAL DATA FETCHING
 # ============================================
 
-def get_user_location():
-    """Get user's location from IP address"""
+def get_ip_address():
+    """Get user's public IP address using multiple services for reliability"""
+    ip_services = [
+        'https://api.ipify.org?format=json',
+        'https://ipinfo.io/json',
+        'https://api.myip.com',
+        'https://ip.seeip.org/json'
+    ]
+    
+    for service in ip_services:
+        try:
+            response = requests.get(service, timeout=5)
+            if response.status_code == 200:
+                data = response.json()
+                # Different services use different keys
+                ip = data.get('ip') or data.get('query') or data.get('origin')
+                if ip:
+                    return ip
+        except:
+            continue
+    
+    return None
+
+def get_location_from_ip(ip_address):
+    """Get location details from an IP address"""
+    try:
+        # Try multiple geolocation services
+        services = [
+            f'https://ipapi.co/{ip_address}/json/',
+            f'https://ipinfo.io/{ip_address}/json',
+            f'http://ip-api.com/json/{ip_address}'
+        ]
+        
+        for service in services:
+            try:
+                response = requests.get(service, timeout=5)
+                if response.status_code == 200:
+                    data = response.json()
+                    
+                    # Handle different API response formats
+                    if 'ipapi.co' in service:
+                        return {
+                            'ip': ip_address,
+                            'city': data.get('city', 'Unknown'),
+                            'region': data.get('region', 'Unknown'),
+                            'country': data.get('country_name', 'Unknown'),
+                            'latitude': data.get('latitude', 46.8),
+                            'longitude': data.get('longitude', 9.8),
+                            'timezone': data.get('timezone', 'UTC'),
+                            'elevation': None,
+                            'source': 'ipapi.co'
+                        }
+                    elif 'ipinfo.io' in service:
+                        loc = data.get('loc', '46.8,9.8').split(',')
+                        return {
+                            'ip': ip_address,
+                            'city': data.get('city', 'Unknown'),
+                            'region': data.get('region', 'Unknown'),
+                            'country': data.get('country', 'Unknown'),
+                            'latitude': float(loc[0]) if len(loc) > 0 else 46.8,
+                            'longitude': float(loc[1]) if len(loc) > 1 else 9.8,
+                            'timezone': data.get('timezone', 'UTC'),
+                            'elevation': None,
+                            'source': 'ipinfo.io'
+                        }
+                    elif 'ip-api.com' in service:
+                        return {
+                            'ip': ip_address,
+                            'city': data.get('city', 'Unknown'),
+                            'region': data.get('regionName', 'Unknown'),
+                            'country': data.get('country', 'Unknown'),
+                            'latitude': data.get('lat', 46.8),
+                            'longitude': data.get('lon', 9.8),
+                            'timezone': data.get('timezone', 'UTC'),
+                            'elevation': None,
+                            'source': 'ip-api.com'
+                        }
+            except:
+                continue
+                
+    except Exception as e:
+        pass
+    
+    return None
+
+def get_user_location(ip_address=None):
+    """Get user's location from IP address (auto-detected or provided)"""
+    # If no IP provided, try to auto-detect
+    if ip_address is None:
+        ip_address = get_ip_address()
+    
+    if ip_address:
+        location = get_location_from_ip(ip_address)
+        if location:
+            return location
+    
+    # Fallback to direct API call (uses requester's IP)
     try:
         response = requests.get('https://ipapi.co/json/', timeout=5)
         if response.status_code == 200:
@@ -76,7 +171,8 @@ def get_user_location():
                 'latitude': data.get('latitude', 46.8),
                 'longitude': data.get('longitude', 9.8),
                 'timezone': data.get('timezone', 'UTC'),
-                'elevation': None  # Will be fetched separately
+                'elevation': None,
+                'source': 'ipapi.co (direct)'
             }
     except Exception as e:
         st.warning(f"Could not fetch location: {e}")
@@ -89,7 +185,8 @@ def get_user_location():
         'latitude': 46.8,
         'longitude': 9.8,
         'timezone': 'Europe/Zurich',
-        'elevation': 1560
+        'elevation': 1560,
+        'source': 'Default'
     }
 
 def get_elevation(lat, lon):
@@ -2222,15 +2319,93 @@ if 'data_sources' not in st.session_state:
     st.session_state.data_sources = []
 if 'inputs' not in st.session_state:
     st.session_state.inputs = {f: 0.0 for f in features_for_input}
+if 'user_ip' not in st.session_state:
+    st.session_state.user_ip = None
+if 'ip_consent' not in st.session_state:
+    st.session_state.ip_consent = False
 
 if data_source == "🛰️ Auto-fetch from satellites (using my location)":
+    
+    # IP Address Permission and Input Section
+    st.markdown("#### 🌐 IP Address for Location Detection")
+    
+    ip_method = st.radio(
+        "How would you like to provide your location?",
+        ["🔍 Auto-detect my IP address", "✏️ Enter IP address manually", "📍 Enter coordinates directly"],
+        horizontal=True,
+        key="ip_method"
+    )
+    
+    if ip_method == "🔍 Auto-detect my IP address":
+        # Request permission
+        st.info("🔒 **Privacy Notice:** To detect your location, we need to access your IP address. Your IP will be used only for geolocation and won't be stored.")
+        
+        col_consent1, col_consent2 = st.columns([1, 3])
+        with col_consent1:
+            if st.button("✅ Allow IP Detection", type="primary"):
+                with st.spinner("🔍 Detecting your IP address..."):
+                    detected_ip = get_ip_address()
+                    if detected_ip:
+                        st.session_state.user_ip = detected_ip
+                        st.session_state.ip_consent = True
+                        st.success(f"✅ IP Address detected: `{detected_ip}`")
+                    else:
+                        st.error("❌ Could not detect IP address. Please enter it manually.")
+        
+        if st.session_state.user_ip and st.session_state.ip_consent:
+            st.success(f"🌐 **Your IP Address:** `{st.session_state.user_ip}`")
+    
+    elif ip_method == "✏️ Enter IP address manually":
+        st.markdown("Enter your public IP address (you can find it at [whatismyip.com](https://www.whatismyip.com/))")
+        
+        col_ip1, col_ip2 = st.columns([2, 1])
+        with col_ip1:
+            manual_ip = st.text_input(
+                "IP Address",
+                placeholder="e.g., 203.0.113.45",
+                help="Enter your public IPv4 or IPv6 address"
+            )
+        with col_ip2:
+            if st.button("🔍 Use This IP", type="primary"):
+                if manual_ip:
+                    # Basic IP validation
+                    import re
+                    ipv4_pattern = r'^(\d{1,3}\.){3}\d{1,3}$'
+                    ipv6_pattern = r'^([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}$'
+                    
+                    if re.match(ipv4_pattern, manual_ip) or re.match(ipv6_pattern, manual_ip) or ':' in manual_ip:
+                        st.session_state.user_ip = manual_ip
+                        st.session_state.ip_consent = True
+                        st.success(f"✅ Using IP: `{manual_ip}`")
+                    else:
+                        st.error("❌ Invalid IP address format. Please check and try again.")
+                else:
+                    st.warning("⚠️ Please enter an IP address")
+        
+        if st.session_state.user_ip:
+            st.info(f"🌐 **Current IP:** `{st.session_state.user_ip}`")
+    
+    else:  # Enter coordinates directly
+        st.session_state.ip_consent = True  # Skip IP step
+        st.info("📍 You can enter your coordinates directly below after fetching data")
+    
+    st.markdown("---")
     
     with col_loc2:
         fetch_location = st.button("🔄 Refresh Location & Data", type="secondary")
     
-    if fetch_location or st.session_state.location is None:
+    # Determine if we should fetch location
+    should_fetch = fetch_location or st.session_state.location is None
+    
+    if should_fetch and (st.session_state.ip_consent or ip_method == "📍 Enter coordinates directly"):
         with st.spinner("📡 Fetching your location from IP address..."):
-            st.session_state.location = get_user_location()
+            if ip_method == "📍 Enter coordinates directly":
+                # Use default location, user will adjust manually
+                st.session_state.location = get_user_location()
+            else:
+                # Use the IP address (auto-detected or manual)
+                st.session_state.location = get_user_location(st.session_state.user_ip)
+            
             lat = st.session_state.location['latitude']
             lon = st.session_state.location['longitude']
             st.session_state.location['elevation'] = get_elevation(lat, lon)
@@ -2257,16 +2432,23 @@ if data_source == "🛰️ Auto-fetch from satellites (using my location)":
         
         progress_bar.empty()
         status_text.empty()
+    elif should_fetch and not st.session_state.ip_consent and ip_method != "📍 Enter coordinates directly":
+        st.warning("⚠️ Please allow IP detection or enter an IP address manually to fetch location data.")
     
     # Display location info
     if st.session_state.location:
         loc = st.session_state.location
         
+        # Build the success message with IP info if available
+        ip_info = f"**🌐 IP Address:** `{loc.get('ip', 'N/A')}`  \n" if loc.get('ip') and loc.get('ip') != 'Unknown' else ""
+        source_info = f"**📡 Data Source:** {loc.get('source', 'Unknown')}  \n" if loc.get('source') else ""
+        
         st.success(f"""
         **📍 Detected Location:** {loc['city']}, {loc['region']}, {loc['country']}  
-        **🌐 Coordinates:** {loc['latitude']:.4f}°N, {loc['longitude']:.4f}°E  
+        **🗺️ Coordinates:** {loc['latitude']:.4f}°N, {loc['longitude']:.4f}°E  
         **⛰️ Elevation:** {loc.get('elevation', 'Unknown')}m  
-        **🕐 Timezone:** {loc['timezone']}
+        **🕐 Timezone:** {loc['timezone']}  
+        {ip_info}{source_info}
         """)
         
         # Manual coordinate adjustment
