@@ -2947,7 +2947,10 @@ if predict_button:
             
             # Get prediction
             prediction, _ = model(tf.constant(input_scaled, dtype=tf.float32), training=False)
-            confidence = float(prediction[0][0])
+            avalanche_probability = float(prediction[0][0])
+            # Model confidence = how far from 0.5 (uncertain) the prediction is
+            # Confidence is high when probability is close to 0 or 1
+            model_confidence = abs(avalanche_probability - 0.5) * 2  # Scale to 0-1
             use_ml_model = True
         
     except Exception as e:
@@ -2982,7 +2985,9 @@ if predict_button:
         if st.session_state.inputs.get('ISWR_daily', 0) > 300:
             risk_score += 0.1
         
-        confidence = min(max(risk_score, 0.0), 1.0)
+        avalanche_probability = min(max(risk_score, 0.0), 1.0)
+        # For physics-based, confidence based on how extreme the indicators are
+        model_confidence = abs(avalanche_probability - 0.5) * 2
     
     st.markdown("")  # Spacing
     
@@ -2995,12 +3000,13 @@ if predict_button:
             risk_level = "NONE"
             risk_class = "risk-none"
             risk_message = "No snow cover detected"
-            confidence = 0.0
-        elif confidence >= 0.7:
+            avalanche_probability = 0.0
+            model_confidence = 1.0  # Very confident there's no risk without snow
+        elif avalanche_probability >= 0.7:
             risk_level = "HIGH"
             risk_class = "risk-high"
             risk_message = "Dangerous conditions likely"
-        elif confidence >= 0.4:
+        elif avalanche_probability >= 0.4:
             risk_level = "MODERATE"
             risk_class = "risk-medium"
             risk_message = "Exercise caution"
@@ -3013,11 +3019,13 @@ if predict_button:
         <div class="risk-card {risk_class}">
             <div class="risk-label">Avalanche Risk</div>
             <div class="risk-level">{risk_level}</div>
-            <div class="risk-confidence">{confidence*100:.0f}% confidence</div>
+            <div class="risk-confidence">{avalanche_probability*100:.0f}% probability</div>
         </div>
         """, unsafe_allow_html=True)
         
-        st.caption(risk_message)
+        # Show model confidence separately
+        confidence_label = "High" if model_confidence >= 0.7 else "Medium" if model_confidence >= 0.4 else "Low"
+        st.caption(f"{risk_message} • Model confidence: {confidence_label}")
     
     # Key factors
     st.markdown('<p class="section-header">Contributing Factors</p>', unsafe_allow_html=True)
@@ -3035,7 +3043,7 @@ if predict_button:
     # Recommendations
     st.markdown('<p class="section-header">Recommendations</p>', unsafe_allow_html=True)
     
-    if confidence >= 0.7:
+    if avalanche_probability >= 0.7:
         st.markdown("""
         <div class="warning-box">
             <strong>High Risk Actions:</strong><br>
@@ -3045,7 +3053,7 @@ if predict_button:
             • Consider postponing backcountry travel
         </div>
         """, unsafe_allow_html=True)
-    elif confidence >= 0.4:
+    elif avalanche_probability >= 0.4:
         st.markdown("""
         <div class="warning-box">
             <strong>Moderate Risk Actions:</strong><br>
