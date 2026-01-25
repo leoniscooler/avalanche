@@ -3061,28 +3061,28 @@ if predict_button:
         
         risk_score = 0.3  # Base risk
         
-        if st.session_state.inputs['TA'] > 0:
+        if st.session_state.inputs.get('TA', 0) > 0:
             risk_score += 0.15
-        if st.session_state.inputs['TA_daily'] > st.session_state.inputs['TA']:
+        if st.session_state.inputs.get('TA_daily', 0) > st.session_state.inputs.get('TA', 0):
             risk_score += 0.1
         
-        if st.session_state.inputs['water_1_diff'] > 10:
+        if st.session_state.inputs.get('water', 0) > 10:
             risk_score += 0.15
-        if st.session_state.inputs['mean_lwc'] > 20:
+        if st.session_state.inputs.get('TSS_mod', 273) > 273:
             risk_score += 0.1
         
-        if st.session_state.inputs['S5'] < 1.0:
+        if st.session_state.inputs.get('S5', 2) < 1.0:
             risk_score += 0.25
-        elif st.session_state.inputs['S5'] < 1.5:
+        elif st.session_state.inputs.get('S5', 2) < 1.5:
             risk_score += 0.15
-        elif st.session_state.inputs['S5'] < 2.0:
+        elif st.session_state.inputs.get('S5', 2) < 2.0:
             risk_score += 0.05
         
-        if st.session_state.inputs['max_height_1_diff'] > 0.3:
+        if st.session_state.inputs.get('max_height_1_diff', 0) > 0.3:
             risk_score += 0.15
         
-        if st.session_state.inputs['MS_Rain_daily'] > 5:
-            risk_score += 0.2
+        if st.session_state.inputs.get('ISWR_daily', 0) > 300:
+            risk_score += 0.1
         
         confidence = min(max(risk_score, 0.0), 1.0)
     
@@ -3122,20 +3122,20 @@ if predict_button:
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
-        st.metric("Stability Index", f"{st.session_state.inputs['S5']:.2f}", 
-                  delta=f"{st.session_state.inputs['S5_daily']:.2f}")
+        st.metric("Stability Index", f"{st.session_state.inputs.get('S5', 0):.2f}", 
+                  delta=f"{st.session_state.inputs.get('S5', 0) - 1:.2f}")
     
     with col2:
-        st.metric("Air Temp", f"{st.session_state.inputs['TA']:.1f}°C",
-                  delta=f"{st.session_state.inputs['TA_daily'] - st.session_state.inputs['TA']:.1f}°C")
+        st.metric("Air Temp", f"{st.session_state.inputs.get('TA', 0):.1f}°C",
+                  delta=f"{st.session_state.inputs.get('TA_daily', 0) - st.session_state.inputs.get('TA', 0):.1f}°C")
     
     with col3:
-        st.metric("Snow Height", f"{st.session_state.inputs['max_height']:.2f}m",
-                  delta=f"{st.session_state.inputs['max_height_1_diff']:.2f}m")
+        st.metric("Snow Height", f"{st.session_state.inputs.get('max_height', 0):.2f}m",
+                  delta=f"{st.session_state.inputs.get('max_height_1_diff', 0):.2f}m")
     
     with col4:
-        st.metric("Water Change", f"{st.session_state.inputs['water_1_diff']:.1f}",
-                  delta="1-day change")
+        st.metric("Solar Radiation", f"{st.session_state.inputs.get('ISWR_daily', 0):.0f} W/m²",
+                  delta="Daily avg")
     
     st.markdown("### 🛡️ Safety Recommendations")
     
