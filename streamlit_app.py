@@ -3091,7 +3091,15 @@ if predict_button:
     col1, col2, col3 = st.columns([1, 2, 1])
     
     with col2:
-        if confidence >= 0.7:
+        # Check if there's no snow - no avalanche danger possible
+        snow_depth = st.session_state.inputs.get('max_height', 0)
+        if snow_depth is None or snow_depth <= 0:
+            risk_level = "NONE"
+            risk_class = "risk-low"
+            risk_emoji = "✅"
+            risk_message = "No snow detected - No avalanche danger"
+            confidence = 0.0
+        elif confidence >= 0.7:
             risk_level = "HIGH"
             risk_class = "risk-high"
             risk_emoji = "🔴"
