@@ -2561,10 +2561,10 @@ if data_source == "🛰️ Auto-fetch from satellites (using my location)":
             col_coord1, col_coord2, col_coord3 = st.columns(3)
             with col_coord1:
                 # Use clicked coordinates if available, otherwise use current location
-                default_lat = st.session_state.get('map_clicked_lat', loc['latitude'])
+                default_lat = st.session_state.get('map_clicked_lat') or loc['latitude']
                 new_lat = st.number_input("Latitude", value=float(default_lat), min_value=-90.0, max_value=90.0, step=0.01, key="manual_lat")
             with col_coord2:
-                default_lon = st.session_state.get('map_clicked_lon', loc['longitude'])
+                default_lon = st.session_state.get('map_clicked_lon') or loc['longitude']
                 new_lon = st.number_input("Longitude", value=float(default_lon), min_value=-180.0, max_value=180.0, step=0.01, key="manual_lon")
             with col_coord3:
                 elev_value = loc.get('elevation') or 1500
@@ -2574,8 +2574,8 @@ if data_source == "🛰️ Auto-fetch from satellites (using my location)":
             with col_btn1:
                 if st.button("📡 Fetch Data for Selected Location", type="primary"):
                     # Use map-clicked coordinates if available, otherwise use manual input
-                    final_lat = st.session_state.get('map_clicked_lat', new_lat)
-                    final_lon = st.session_state.get('map_clicked_lon', new_lon)
+                    final_lat = st.session_state.get('map_clicked_lat') or new_lat
+                    final_lon = st.session_state.get('map_clicked_lon') or new_lon
                     
                     progress_bar = st.progress(0)
                     status_text = st.empty()
