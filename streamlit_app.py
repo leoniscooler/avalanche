@@ -8,6 +8,8 @@ from datetime import datetime, timedelta
 import os
 import json
 import math
+import folium
+from streamlit_folium import st_folium
 
 # ============================================
 # FEATURE DEFINITIONS (must be early for reference)
@@ -2348,6 +2350,10 @@ if 'user_ip' not in st.session_state:
     st.session_state.user_ip = None
 if 'ip_consent' not in st.session_state:
     st.session_state.ip_consent = False
+if 'map_clicked_lat' not in st.session_state:
+    st.session_state.map_clicked_lat = None
+if 'map_clicked_lon' not in st.session_state:
+    st.session_state.map_clicked_lon = None
 
 if data_source == "🛰️ Auto-fetch from satellites (using my location)":
     
@@ -2477,38 +2483,138 @@ if data_source == "🛰️ Auto-fetch from satellites (using my location)":
         """)
         
         # Manual coordinate adjustment
-        with st.expander("🎯 Adjust Location Manually"):
+        with st.expander("🎯 Adjust Location Manually", expanded=False):
+            st.markdown("**Click on the map to select your location, or enter coordinates below:**")
+            
+            # Initialize map location from current location
+            map_lat = loc['latitude']
+            map_lon = loc['longitude']
+            
+            # Check if user clicked on map previously
+            if 'map_clicked_lat' in st.session_state and st.session_state.map_clicked_lat is not None:
+                map_lat = st.session_state.map_clicked_lat
+                map_lon = st.session_state.map_clicked_lon
+            
+            # Create the interactive map
+            m = folium.Map(
+                location=[map_lat, map_lon],
+                zoom_start=10,
+                tiles='OpenStreetMap'
+            )
+            
+            # Add terrain/satellite layer options
+            folium.TileLayer(
+                tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+                attr='Esri',
+                name='Satellite',
+                overlay=False
+            ).add_to(m)
+            
+            folium.TileLayer(
+                tiles='https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
+                attr='OpenTopoMap',
+                name='Terrain',
+                overlay=False
+            ).add_to(m)
+            
+            # Add layer control
+            folium.LayerControl().add_to(m)
+            
+            # Add current marker
+            folium.Marker(
+                [map_lat, map_lon],
+                popup=f"Selected Location<br>Lat: {map_lat:.4f}<br>Lon: {map_lon:.4f}",
+                tooltip="📍 Current Selection",
+                icon=folium.Icon(color='red', icon='info-sign')
+            ).add_to(m)
+            
+            # Add a circle to show approximate area
+            folium.Circle(
+                [map_lat, map_lon],
+                radius=5000,  # 5km radius
+                color='blue',
+                fill=True,
+                fill_opacity=0.1,
+                popup="5km radius"
+            ).add_to(m)
+            
+            # Display the map and capture clicks
+            map_data = st_folium(
+                m,
+                width=700,
+                height=400,
+                key="location_map",
+                returned_objects=["last_clicked"]
+            )
+            
+            # Handle map click
+            if map_data and map_data.get('last_clicked'):
+                clicked_lat = map_data['last_clicked']['lat']
+                clicked_lon = map_data['last_clicked']['lng']
+                st.session_state.map_clicked_lat = clicked_lat
+                st.session_state.map_clicked_lon = clicked_lon
+                st.info(f"📍 **Clicked Location:** {clicked_lat:.4f}°N, {clicked_lon:.4f}°E")
+            
+            st.markdown("---")
+            st.markdown("**Or enter coordinates manually:**")
+            
             col_coord1, col_coord2, col_coord3 = st.columns(3)
             with col_coord1:
-                new_lat = st.number_input("Latitude", value=loc['latitude'], min_value=-90.0, max_value=90.0, step=0.01)
+                # Use clicked coordinates if available, otherwise use current location
+                default_lat = st.session_state.get('map_clicked_lat', loc['latitude'])
+                new_lat = st.number_input("Latitude", value=float(default_lat), min_value=-90.0, max_value=90.0, step=0.01, key="manual_lat")
             with col_coord2:
-                new_lon = st.number_input("Longitude", value=loc['longitude'], min_value=-180.0, max_value=180.0, step=0.01)
+                default_lon = st.session_state.get('map_clicked_lon', loc['longitude'])
+                new_lon = st.number_input("Longitude", value=float(default_lon), min_value=-180.0, max_value=180.0, step=0.01, key="manual_lon")
             with col_coord3:
                 elev_value = loc.get('elevation') or 1500
-                new_elev = st.number_input("Elevation (m)", value=int(elev_value), min_value=0, max_value=9000, step=100)
+                new_elev = st.number_input("Elevation (m)", value=int(elev_value), min_value=0, max_value=9000, step=100, key="manual_elev")
             
-            if st.button("📡 Fetch Data for New Coordinates"):
-                progress_bar = st.progress(0)
-                status_text = st.empty()
-                
-                def update_progress(progress, text):
-                    progress_bar.progress(progress)
-                    status_text.text(text)
-                
-                with st.spinner("🛰️ Downloading data for new location..."):
-                    st.session_state.location['latitude'] = new_lat
-                    st.session_state.location['longitude'] = new_lon
-                    st.session_state.location['elevation'] = new_elev
+            col_btn1, col_btn2 = st.columns(2)
+            with col_btn1:
+                if st.button("📡 Fetch Data for Selected Location", type="primary"):
+                    # Use map-clicked coordinates if available, otherwise use manual input
+                    final_lat = st.session_state.get('map_clicked_lat', new_lat)
+                    final_lon = st.session_state.get('map_clicked_lon', new_lon)
                     
-                    st.session_state.satellite_raw = fetch_all_satellite_data(new_lat, new_lon, update_progress)
-                    st.session_state.env_data, st.session_state.data_sources = process_satellite_data(
-                        st.session_state.satellite_raw,
-                        new_elev
-                    )
-                
-                progress_bar.empty()
-                status_text.empty()
-                st.rerun()
+                    progress_bar = st.progress(0)
+                    status_text = st.empty()
+                    
+                    def update_progress(progress, text):
+                        progress_bar.progress(progress)
+                        status_text.text(text)
+                    
+                    with st.spinner("🛰️ Downloading data for new location..."):
+                        st.session_state.location['latitude'] = final_lat
+                        st.session_state.location['longitude'] = final_lon
+                        st.session_state.location['elevation'] = new_elev
+                        
+                        # Get reverse geocoding for the new location
+                        reverse_geo = get_reverse_geocode(final_lat, final_lon)
+                        if reverse_geo:
+                            st.session_state.location['city'] = reverse_geo.get('city', 'Unknown')
+                            st.session_state.location['region'] = reverse_geo.get('region', 'Unknown')
+                            st.session_state.location['country'] = reverse_geo.get('country', 'Unknown')
+                        
+                        st.session_state.satellite_raw = fetch_all_satellite_data(final_lat, final_lon, update_progress)
+                        st.session_state.env_data, st.session_state.data_sources = process_satellite_data(
+                            st.session_state.satellite_raw,
+                            new_elev
+                        )
+                    
+                    # Clear map click state
+                    st.session_state.map_clicked_lat = None
+                    st.session_state.map_clicked_lon = None
+                    
+                    progress_bar.empty()
+                    status_text.empty()
+                    st.rerun()
+            
+            with col_btn2:
+                if st.button("🔄 Reset to Detected Location"):
+                    st.session_state.map_clicked_lat = None
+                    st.session_state.map_clicked_lon = None
+                    st.rerun()
     
     # Display satellite data status
     if st.session_state.satellite_raw:
