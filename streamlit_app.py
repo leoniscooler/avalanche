@@ -2357,12 +2357,12 @@ if 'map_clicked_lon' not in st.session_state:
 
 if data_source == "🛰️ Auto-fetch from satellites (using my location)":
     
-    # IP Address Permission and Input Section
-    st.markdown("#### 🌐 IP Address for Location Detection")
+    # Location Selection Section
+    st.markdown("#### 📍 Select Your Location")
     
     ip_method = st.radio(
         "How would you like to provide your location?",
-        ["🔍 Auto-detect my IP address", "✏️ Enter IP address manually", "📍 Enter coordinates directly"],
+        ["🔍 Auto-detect my IP address", "🗺️ Select on map"],
         horizontal=True,
         key="ip_method"
     )
@@ -2381,44 +2381,99 @@ if data_source == "🛰️ Auto-fetch from satellites (using my location)":
                         st.session_state.ip_consent = True
                         st.success(f"✅ IP Address detected: `{detected_ip}`")
                     else:
-                        st.error("❌ Could not detect IP address. Please enter it manually.")
+                        st.error("❌ Could not detect IP address. Please select location on map.")
         
         if st.session_state.user_ip and st.session_state.ip_consent:
             st.success(f"🌐 **Your IP Address:** `{st.session_state.user_ip}`")
     
-    elif ip_method == "✏️ Enter IP address manually":
-        st.markdown("Enter your public IP address (you can find it at [whatismyip.com](https://www.whatismyip.com/))")
-        
-        col_ip1, col_ip2 = st.columns([2, 1])
-        with col_ip1:
-            manual_ip = st.text_input(
-                "IP Address",
-                placeholder="e.g., 203.0.113.45",
-                help="Enter your public IPv4 or IPv6 address"
-            )
-        with col_ip2:
-            if st.button("🔍 Use This IP", type="primary"):
-                if manual_ip:
-                    # Basic IP validation
-                    import re
-                    ipv4_pattern = r'^(\d{1,3}\.){3}\d{1,3}$'
-                    ipv6_pattern = r'^([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}$'
-                    
-                    if re.match(ipv4_pattern, manual_ip) or re.match(ipv6_pattern, manual_ip) or ':' in manual_ip:
-                        st.session_state.user_ip = manual_ip
-                        st.session_state.ip_consent = True
-                        st.success(f"✅ Using IP: `{manual_ip}`")
-                    else:
-                        st.error("❌ Invalid IP address format. Please check and try again.")
-                else:
-                    st.warning("⚠️ Please enter an IP address")
-        
-        if st.session_state.user_ip:
-            st.info(f"🌐 **Current IP:** `{st.session_state.user_ip}`")
-    
-    else:  # Enter coordinates directly
+    else:  # Select on map
         st.session_state.ip_consent = True  # Skip IP step
-        st.info("📍 You can enter your coordinates directly below after fetching data")
+        
+        st.markdown("**Click on the map to select your location:**")
+        
+        # Get default location (Alps region for avalanche context)
+        default_lat = st.session_state.get('map_clicked_lat') or 46.8
+        default_lon = st.session_state.get('map_clicked_lon') or 9.8
+        
+        # Create the interactive map for location selection
+        m = folium.Map(
+            location=[default_lat, default_lon],
+            zoom_start=6,
+            tiles='OpenStreetMap'
+        )
+        
+        # Add terrain/satellite layer options
+        folium.TileLayer(
+            tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+            attr='Esri',
+            name='Satellite',
+            overlay=False
+        ).add_to(m)
+        
+        folium.TileLayer(
+            tiles='https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
+            attr='OpenTopoMap',
+            name='Terrain',
+            overlay=False
+        ).add_to(m)
+        
+        # Add layer control
+        folium.LayerControl().add_to(m)
+        
+        # Add marker if location is selected
+        if st.session_state.get('map_clicked_lat'):
+            folium.Marker(
+                [st.session_state.map_clicked_lat, st.session_state.map_clicked_lon],
+                popup=f"Selected Location<br>Lat: {st.session_state.map_clicked_lat:.4f}<br>Lon: {st.session_state.map_clicked_lon:.4f}",
+                tooltip="📍 Selected Location",
+                icon=folium.Icon(color='red', icon='info-sign')
+            ).add_to(m)
+            
+            # Add a circle to show approximate area
+            folium.Circle(
+                [st.session_state.map_clicked_lat, st.session_state.map_clicked_lon],
+                radius=5000,  # 5km radius
+                color='blue',
+                fill=True,
+                fill_opacity=0.1,
+                popup="5km radius"
+            ).add_to(m)
+        
+        # Display the map and capture clicks
+        map_data = st_folium(
+            m,
+            width=700,
+            height=400,
+            key="main_location_map",
+            returned_objects=["last_clicked"]
+        )
+        
+        # Handle map click
+        if map_data and map_data.get('last_clicked'):
+            clicked_lat = map_data['last_clicked']['lat']
+            clicked_lon = map_data['last_clicked']['lng']
+            st.session_state.map_clicked_lat = clicked_lat
+            st.session_state.map_clicked_lon = clicked_lon
+        
+        if st.session_state.get('map_clicked_lat'):
+            st.success(f"📍 **Selected Location:** {st.session_state.map_clicked_lat:.4f}°N, {st.session_state.map_clicked_lon:.4f}°E")
+            
+            # Optional: manual fine-tuning
+            with st.expander("🎯 Fine-tune coordinates"):
+                col_ft1, col_ft2, col_ft3 = st.columns(3)
+                with col_ft1:
+                    fine_lat = st.number_input("Latitude", value=float(st.session_state.map_clicked_lat), 
+                                               min_value=-90.0, max_value=90.0, step=0.001, key="fine_lat")
+                with col_ft2:
+                    fine_lon = st.number_input("Longitude", value=float(st.session_state.map_clicked_lon), 
+                                               min_value=-180.0, max_value=180.0, step=0.001, key="fine_lon")
+                with col_ft3:
+                    if st.button("Update Coordinates"):
+                        st.session_state.map_clicked_lat = fine_lat
+                        st.session_state.map_clicked_lon = fine_lon
+                        st.rerun()
+        else:
+            st.warning("👆 Click on the map to select your location")
     
     st.markdown("---")
     
@@ -2428,43 +2483,53 @@ if data_source == "🛰️ Auto-fetch from satellites (using my location)":
     # Determine if we should fetch location
     should_fetch = fetch_location or st.session_state.location is None
     
-    if should_fetch and (st.session_state.ip_consent or ip_method == "📍 Enter coordinates directly"):
-        with st.spinner("📡 Fetching your location from IP address..."):
-            if ip_method == "📍 Enter coordinates directly":
-                # Use default location, user will adjust manually
-                st.session_state.location = get_user_location()
+    if should_fetch and st.session_state.ip_consent:
+        if ip_method == "🗺️ Select on map":
+            if st.session_state.get('map_clicked_lat'):
+                # Use map-selected coordinates
+                st.session_state.location = create_location_from_coords(
+                    st.session_state.map_clicked_lat, 
+                    st.session_state.map_clicked_lon
+                )
+                lat = st.session_state.location['latitude']
+                lon = st.session_state.location['longitude']
+                st.session_state.location['elevation'] = get_elevation(lat, lon)
             else:
-                # Use the IP address (auto-detected or manual)
+                st.warning("⚠️ Please click on the map to select a location first.")
+                should_fetch = False
+        else:
+            # Use IP-based location
+            with st.spinner("📡 Fetching your location from IP address..."):
                 st.session_state.location = get_user_location(st.session_state.user_ip)
+                lat = st.session_state.location['latitude']
+                lon = st.session_state.location['longitude']
+                st.session_state.location['elevation'] = get_elevation(lat, lon)
+        
+        if should_fetch and st.session_state.location:
+            # Create progress tracking
+            progress_bar = st.progress(0)
+            status_text = st.empty()
             
-            lat = st.session_state.location['latitude']
-            lon = st.session_state.location['longitude']
-            st.session_state.location['elevation'] = get_elevation(lat, lon)
-        
-        # Create progress tracking
-        progress_bar = st.progress(0)
-        status_text = st.empty()
-        
-        def update_progress(progress, text):
-            progress_bar.progress(progress)
-            status_text.text(text)
-        
-        with st.spinner("🛰️ Fetching satellite data from multiple sources..."):
-            lat = st.session_state.location['latitude']
-            lon = st.session_state.location['longitude']
+            def update_progress(progress, text):
+                progress_bar.progress(progress)
+                status_text.text(text)
             
-            st.session_state.satellite_raw = fetch_all_satellite_data(lat, lon, update_progress)
+            with st.spinner("🛰️ Fetching satellite data from multiple sources..."):
+                lat = st.session_state.location['latitude']
+                lon = st.session_state.location['longitude']
+                
+                st.session_state.satellite_raw = fetch_all_satellite_data(lat, lon, update_progress)
+                
+                elevation = st.session_state.location.get('elevation', 1500)
+                st.session_state.env_data, st.session_state.data_sources = process_satellite_data(
+                    st.session_state.satellite_raw, 
+                    elevation
+                )
             
-            elevation = st.session_state.location.get('elevation', 1500)
-            st.session_state.env_data, st.session_state.data_sources = process_satellite_data(
-                st.session_state.satellite_raw, 
-                elevation
-            )
-        
-        progress_bar.empty()
-        status_text.empty()
-    elif should_fetch and not st.session_state.ip_consent and ip_method != "📍 Enter coordinates directly":
-        st.warning("⚠️ Please allow IP detection or enter an IP address manually to fetch location data.")
+            progress_bar.empty()
+            status_text.empty()
+    elif should_fetch and not st.session_state.ip_consent:
+        st.warning("⚠️ Please allow IP detection or select a location on the map first.")
     
     # Display location info
     if st.session_state.location:
