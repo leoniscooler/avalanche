@@ -1738,8 +1738,16 @@ with st.sidebar.expander("ℹ️ About Satellite Data"):
         st.markdown("---")
 
 # Helper function
-def get_input_value(key, default=0.0):
-    return st.session_state.inputs.get(key, default)
+def get_input_value(key, default=0.0, min_val=None, max_val=None):
+    value = st.session_state.inputs.get(key, default)
+    if value is None:
+        value = default
+    # Clamp value to min/max if provided
+    if min_val is not None and value < min_val:
+        value = min_val
+    if max_val is not None and value > max_val:
+        value = max_val
+    return value
 
 # Input sections
 st.subheader("📊 Snowpack & Weather Data")
@@ -1954,28 +1962,28 @@ with tab3:
         st.markdown("**Heat Flux** (Calculated)")
         st.session_state.inputs['Qs'] = st.number_input(
             "Sensible Heat (W/m²)", 
-            value=float(get_input_value('Qs', 0.0)), 
-            min_value=-200.0, max_value=200.0, step=5.0,
+            value=float(get_input_value('Qs', 0.0, -500.0, 500.0)), 
+            min_value=-500.0, max_value=500.0, step=5.0,
             help="Calculated using bulk aerodynamic formula",
             key="input_Qs"
         )
         st.session_state.inputs['Ql'] = st.number_input(
             "Latent Heat (W/m²)", 
-            value=float(get_input_value('Ql', 0.0)), 
-            min_value=-200.0, max_value=200.0, step=5.0,
+            value=float(get_input_value('Ql', 0.0, -500.0, 500.0)), 
+            min_value=-500.0, max_value=500.0, step=5.0,
             help="Sublimation/evaporation flux",
             key="input_Ql"
         )
         st.session_state.inputs['Ql_daily'] = st.number_input(
             "Daily Latent Heat", 
-            value=float(get_input_value('Ql_daily', 0.0)), 
-            min_value=-200.0, max_value=200.0, step=5.0,
+            value=float(get_input_value('Ql_daily', 0.0, -500.0, 500.0)), 
+            min_value=-500.0, max_value=500.0, step=5.0,
             key="input_Ql_daily"
         )
         st.session_state.inputs['Qw_daily'] = st.number_input(
             "Daily Absorbed SW", 
-            value=float(get_input_value('Qw_daily', 50.0)), 
-            min_value=0.0, max_value=500.0, step=10.0,
+            value=float(get_input_value('Qw_daily', 50.0, 0.0, 1000.0)), 
+            min_value=0.0, max_value=1000.0, step=10.0,
             key="input_Qw_daily"
         )
 
