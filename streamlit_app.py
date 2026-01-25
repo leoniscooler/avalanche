@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import pandas as pd
 import numpy as np
 import joblib
@@ -62,132 +63,39 @@ SATELLITE_SOURCES = {
 # LOCATION & ENVIRONMENTAL DATA FETCHING
 # ============================================
 
-def get_ip_address():
-    """Get user's public IP address using multiple services for reliability"""
-    ip_services = [
-        'https://api.ipify.org?format=json',
-        'https://ipinfo.io/json',
-        'https://api.myip.com',
-        'https://ip.seeip.org/json'
-    ]
-    
-    for service in ip_services:
-        try:
-            response = requests.get(service, timeout=5)
-            if response.status_code == 200:
-                data = response.json()
-                # Different services use different keys
-                ip = data.get('ip') or data.get('query') or data.get('origin')
-                if ip:
-                    return ip
-        except:
-            continue
-    
-    return None
-
-def get_location_from_ip(ip_address):
-    """Get location details from an IP address"""
+def get_reverse_geocode(lat, lon):
+    """Get city/region/country from coordinates using reverse geocoding"""
     try:
-        # Try multiple geolocation services
-        services = [
-            f'https://ipapi.co/{ip_address}/json/',
-            f'https://ipinfo.io/{ip_address}/json',
-            f'http://ip-api.com/json/{ip_address}'
-        ]
-        
-        for service in services:
-            try:
-                response = requests.get(service, timeout=5)
-                if response.status_code == 200:
-                    data = response.json()
-                    
-                    # Handle different API response formats
-                    if 'ipapi.co' in service:
-                        return {
-                            'ip': ip_address,
-                            'city': data.get('city', 'Unknown'),
-                            'region': data.get('region', 'Unknown'),
-                            'country': data.get('country_name', 'Unknown'),
-                            'latitude': data.get('latitude', 46.8),
-                            'longitude': data.get('longitude', 9.8),
-                            'timezone': data.get('timezone', 'UTC'),
-                            'elevation': None,
-                            'source': 'ipapi.co'
-                        }
-                    elif 'ipinfo.io' in service:
-                        loc = data.get('loc', '46.8,9.8').split(',')
-                        return {
-                            'ip': ip_address,
-                            'city': data.get('city', 'Unknown'),
-                            'region': data.get('region', 'Unknown'),
-                            'country': data.get('country', 'Unknown'),
-                            'latitude': float(loc[0]) if len(loc) > 0 else 46.8,
-                            'longitude': float(loc[1]) if len(loc) > 1 else 9.8,
-                            'timezone': data.get('timezone', 'UTC'),
-                            'elevation': None,
-                            'source': 'ipinfo.io'
-                        }
-                    elif 'ip-api.com' in service:
-                        return {
-                            'ip': ip_address,
-                            'city': data.get('city', 'Unknown'),
-                            'region': data.get('regionName', 'Unknown'),
-                            'country': data.get('country', 'Unknown'),
-                            'latitude': data.get('lat', 46.8),
-                            'longitude': data.get('lon', 9.8),
-                            'timezone': data.get('timezone', 'UTC'),
-                            'elevation': None,
-                            'source': 'ip-api.com'
-                        }
-            except:
-                continue
-                
-    except Exception as e:
-        pass
-    
-    return None
-
-def get_user_location(ip_address=None):
-    """Get user's location from IP address (auto-detected or provided)"""
-    # If no IP provided, try to auto-detect
-    if ip_address is None:
-        ip_address = get_ip_address()
-    
-    if ip_address:
-        location = get_location_from_ip(ip_address)
-        if location:
-            return location
-    
-    # Fallback to direct API call (uses requester's IP)
-    try:
-        response = requests.get('https://ipapi.co/json/', timeout=5)
+        # Try Open-Meteo geocoding (free, no API key)
+        url = f"https://nominatim.openstreetmap.org/reverse?lat={lat}&lon={lon}&format=json"
+        headers = {'User-Agent': 'AvalancheApp/1.0'}
+        response = requests.get(url, headers=headers, timeout=5)
         if response.status_code == 200:
             data = response.json()
+            address = data.get('address', {})
             return {
-                'ip': data.get('ip', 'Unknown'),
-                'city': data.get('city', 'Unknown'),
-                'region': data.get('region', 'Unknown'),
-                'country': data.get('country_name', 'Unknown'),
-                'latitude': data.get('latitude', 46.8),
-                'longitude': data.get('longitude', 9.8),
-                'timezone': data.get('timezone', 'UTC'),
-                'elevation': None,
-                'source': 'ipapi.co (direct)'
+                'city': address.get('city') or address.get('town') or address.get('village') or address.get('municipality') or 'Unknown',
+                'region': address.get('state') or address.get('province') or address.get('region') or 'Unknown',
+                'country': address.get('country', 'Unknown'),
+                'display_name': data.get('display_name', '')
             }
-    except Exception as e:
-        st.warning(f"Could not fetch location: {e}")
+    except:
+        pass
     
-    return {
-        'ip': 'Unknown',
-        'city': 'Davos',
-        'region': 'Graubünden',
-        'country': 'Switzerland',
-        'latitude': 46.8,
-        'longitude': 9.8,
-        'timezone': 'Europe/Zurich',
-        'elevation': 1560,
-        'source': 'Default'
-    }
+    return {'city': 'Unknown', 'region': 'Unknown', 'country': 'Unknown', 'display_name': ''}
+
+def get_timezone_from_coords(lat, lon):
+    """Get timezone from coordinates"""
+    try:
+        # Use Open-Meteo to get timezone
+        url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current=temperature_2m&timezone=auto"
+        response = requests.get(url, timeout=5)
+        if response.status_code == 200:
+            data = response.json()
+            return data.get('timezone', 'UTC')
+    except:
+        pass
+    return 'UTC'
 
 def get_elevation(lat, lon):
     """Fetch elevation data from Open-Meteo API"""
@@ -200,6 +108,24 @@ def get_elevation(lat, lon):
     except:
         pass
     return 1500  # Default mountain elevation
+
+def create_location_from_coords(lat, lon):
+    """Create a full location object from coordinates"""
+    geo = get_reverse_geocode(lat, lon)
+    tz = get_timezone_from_coords(lat, lon)
+    elev = get_elevation(lat, lon)
+    
+    return {
+        'latitude': lat,
+        'longitude': lon,
+        'city': geo['city'],
+        'region': geo['region'],
+        'country': geo['country'],
+        'display_name': geo['display_name'],
+        'timezone': tz,
+        'elevation': elev,
+        'source': 'GPS/Browser Geolocation'
+    }
 
 # ============================================
 # NASA EARTHDATA (MODIS/VIIRS) DATA FETCHING
