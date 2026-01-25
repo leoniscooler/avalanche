@@ -4,12 +4,34 @@ import pandas as pd
 import numpy as np
 import joblib
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 from datetime import datetime, timedelta
 import os
 import json
 import math
 import folium
 from streamlit_folium import st_folium
+
+# ============================================
+# HTTP SESSION WITH RETRY LOGIC
+# ============================================
+def get_http_session(retries=3, backoff_factor=0.5, timeout=15):
+    """Create a requests session with retry logic and longer timeouts."""
+    session = requests.Session()
+    retry_strategy = Retry(
+        total=retries,
+        backoff_factor=backoff_factor,
+        status_forcelist=[429, 500, 502, 503, 504],
+        allowed_methods=["GET", "POST"]
+    )
+    adapter = HTTPAdapter(max_retries=retry_strategy)
+    session.mount("https://", adapter)
+    session.mount("http://", adapter)
+    return session
+
+# Default timeout for API calls (increased from 10)
+DEFAULT_TIMEOUT = 20
 
 # ============================================
 # FEATURE DEFINITIONS (must be early for reference)
@@ -258,7 +280,8 @@ def fetch_nasa_earthdata(lat, lon, date_str=None):
             'page_size': 5
         }
         
-        response = requests.get(cmr_url, params=params, timeout=10)
+        session = get_http_session()
+        response = session.get(cmr_url, params=params, timeout=DEFAULT_TIMEOUT)
         
         if response.status_code == 200:
             result = response.json()
@@ -275,7 +298,7 @@ def fetch_nasa_earthdata(lat, lon, date_str=None):
         params['short_name'] = 'VNP10A1'
         params['version'] = '001'
         
-        response = requests.get(cmr_url, params=params, timeout=10)
+        response = session.get(cmr_url, params=params, timeout=DEFAULT_TIMEOUT)
         
         if response.status_code == 200:
             result = response.json()
@@ -324,7 +347,8 @@ def fetch_nasa_gibs_imagery(lat, lon, date_str=None):
             'TIME': date_str
         }
         
-        response = requests.get(gibs_url, params=params, timeout=15)
+        session = get_http_session()
+        response = session.get(gibs_url, params=params, timeout=DEFAULT_TIMEOUT)
         
         if response.status_code == 200:
             try:
@@ -414,7 +438,8 @@ def fetch_era5_data(lat, lon):
             ]
         }
         
-        response = requests.get(url, params=params, timeout=20)
+        session = get_http_session()
+        response = session.get(url, params=params, timeout=DEFAULT_TIMEOUT)
         
         if response.status_code == 200:
             result = response.json()
@@ -478,7 +503,8 @@ def fetch_era5_land_data(lat, lon):
             'models': 'era5_land'  # Request ERA5-Land specifically
         }
         
-        response = requests.get(url, params=params, timeout=15)
+        session = get_http_session()
+        response = session.get(url, params=params, timeout=DEFAULT_TIMEOUT)
         
         if response.status_code == 200:
             result = response.json()
@@ -533,7 +559,8 @@ def fetch_goes_data(lat, lon):
             'format': 'JSON'
         }
         
-        response = requests.get(power_url, params=params, timeout=15)
+        session = get_http_session()
+        response = session.get(power_url, params=params, timeout=DEFAULT_TIMEOUT)
         
         if response.status_code == 200:
             result = response.json()
@@ -591,7 +618,8 @@ def fetch_sentinel_data(lat, lon):
             '$top': 5
         }
         
-        response = requests.get(odata_url, params=params, timeout=15)
+        session = get_http_session()
+        response = session.get(odata_url, params=params, timeout=DEFAULT_TIMEOUT)
         
         if response.status_code == 200:
             result = response.json()
@@ -645,7 +673,8 @@ def fetch_nsidc_data(lat, lon):
             'page_size': 3
         }
         
-        response = requests.get(cmr_url, params=params, timeout=10)
+        session = get_http_session()
+        response = session.get(cmr_url, params=params, timeout=DEFAULT_TIMEOUT)
         
         if response.status_code == 200:
             result = response.json()
@@ -701,7 +730,8 @@ def fetch_meteomatics_data(lat, lon):
             'forecast_days': 1
         }
         
-        response = requests.get(url, params=params, timeout=10)
+        session = get_http_session()
+        response = session.get(url, params=params, timeout=DEFAULT_TIMEOUT)
         
         if response.status_code == 200:
             result = response.json()
@@ -760,7 +790,8 @@ def fetch_ecmwf_ensemble(lat, lon):
             'models': 'ecmwf_ifs04'
         }
         
-        response = requests.get(url, params=params, timeout=10)
+        session = get_http_session()
+        response = session.get(url, params=params, timeout=DEFAULT_TIMEOUT)
         
         if response.status_code == 200:
             result = response.json()
@@ -801,7 +832,8 @@ def fetch_climate_normals(lat, lon):
             'daily': ['temperature_2m_mean', 'precipitation_sum']
         }
         
-        response = requests.get(url, params=params, timeout=15)
+        session = get_http_session()
+        response = session.get(url, params=params, timeout=DEFAULT_TIMEOUT)
         
         if response.status_code == 200:
             data['available'] = True
@@ -937,7 +969,8 @@ def fetch_nearby_weather_stations(lat, lon, radius_km=50):
             'timezone': 'auto'
         }
         
-        response = requests.get(url, params=params, timeout=10)
+        session = get_http_session()
+        response = session.get(url, params=params, timeout=DEFAULT_TIMEOUT)
         
         if response.status_code == 200:
             result = response.json()
@@ -1002,7 +1035,8 @@ def fetch_snotel_data(lat, lon):
             'returnReservoirMetadata': 'false'
         }
         
-        response = requests.get(station_url, params=params, timeout=15)
+        session = get_http_session()
+        response = session.get(station_url, params=params, timeout=DEFAULT_TIMEOUT)
         
         if response.status_code == 200:
             stations = response.json()
@@ -1044,7 +1078,7 @@ def fetch_snotel_data(lat, lon):
                             'duration': 'DAILY'
                         }
                         
-                        data_response = requests.get(data_url, params=data_params, timeout=15)
+                        data_response = session.get(data_url, params=data_params, timeout=DEFAULT_TIMEOUT)
                         
                         if data_response.status_code == 200:
                             station_data = data_response.json()
@@ -1103,7 +1137,8 @@ def fetch_mesowest_data(lat, lon, radius_miles=30):
             'token': 'demotoken'  # Public demo token
         }
         
-        response = requests.get(url, params=params, timeout=15)
+        session = get_http_session()
+        response = session.get(url, params=params, timeout=DEFAULT_TIMEOUT)
         
         if response.status_code == 200:
             result = response.json()
@@ -1167,7 +1202,8 @@ def fetch_wmo_stations(lat, lon):
             'timezone': 'auto'
         }
         
-        response = requests.get(url, params=params, timeout=15)
+        session = get_http_session()
+        response = session.get(url, params=params, timeout=DEFAULT_TIMEOUT)
         
         if response.status_code == 200:
             result = response.json()
@@ -1226,7 +1262,8 @@ def fetch_smap_data(lat, lon):
             'page_size': 3
         }
         
-        response = requests.get(cmr_url, params=params, timeout=10)
+        session = get_http_session()
+        response = session.get(cmr_url, params=params, timeout=DEFAULT_TIMEOUT)
         
         if response.status_code == 200:
             result = response.json()
@@ -1273,7 +1310,8 @@ def fetch_gpm_precipitation(lat, lon):
             'page_size': 5
         }
         
-        response = requests.get(cmr_url, params=params, timeout=10)
+        session = get_http_session()
+        response = session.get(cmr_url, params=params, timeout=DEFAULT_TIMEOUT)
         
         if response.status_code == 200:
             result = response.json()
@@ -1319,7 +1357,8 @@ def fetch_landsat_snow(lat, lon):
             'page_size': 5
         }
         
-        response = requests.get(cmr_url, params=params, timeout=10)
+        session = get_http_session()
+        response = session.get(cmr_url, params=params, timeout=DEFAULT_TIMEOUT)
         
         if response.status_code == 200:
             result = response.json()
@@ -1510,16 +1549,20 @@ def fetch_weather_data(lat, lon):
             'forecast_days': 1
         }
         
-        response = requests.get(current_url, params=params, timeout=10)
+        session = get_http_session()
+        response = session.get(current_url, params=params, timeout=DEFAULT_TIMEOUT)
         
         if response.status_code == 200:
             return response.json()
         else:
-            st.error(f"Weather API returned status {response.status_code}")
+            st.warning(f"Weather API returned status {response.status_code}")
             return None
             
+    except requests.exceptions.Timeout:
+        st.warning("Weather data request timed out. Using cached or default values.")
+        return None
     except Exception as e:
-        st.error(f"Error fetching weather data: {e}")
+        st.warning(f"Error fetching weather data: {e}")
         return None
 
 # ============================================
