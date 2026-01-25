@@ -1566,7 +1566,8 @@ if data_source == "🛰️ Auto-fetch from satellites (using my location)":
             with col_coord2:
                 new_lon = st.number_input("Longitude", value=loc['longitude'], min_value=-180.0, max_value=180.0, step=0.01)
             with col_coord3:
-                new_elev = st.number_input("Elevation (m)", value=loc.get('elevation', 1500), min_value=0, max_value=9000, step=100)
+                elev_value = loc.get('elevation') or 1500
+                new_elev = st.number_input("Elevation (m)", value=int(elev_value), min_value=0, max_value=9000, step=100)
             
             if st.button("📡 Fetch Data for New Coordinates"):
                 progress_bar = st.progress(0)
