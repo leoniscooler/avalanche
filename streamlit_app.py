@@ -922,7 +922,7 @@ def calculate_liquid_water_content(air_temp, snow_depth, solar_radiation, time_h
     Uses degree-day and radiation melt models
     """
     if snow_depth <= 0:
-        return 0, 0, 0
+        return 0, 0, 0, 0
     
     # Degree-day factor (mm/°C/day)
     ddf = 4.0  # Typical value for alpine snow
