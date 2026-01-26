@@ -2336,6 +2336,407 @@ def process_satellite_data(satellite_data, elevation=1500):
 
 
 # ============================================
+# WIND LOADING ZONE ANALYSIS
+# ============================================
+
+def get_cardinal_direction(degrees):
+    """Convert wind direction in degrees to cardinal direction."""
+    directions = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE',
+                  'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW']
+    idx = round(degrees / 22.5) % 16
+    return directions[idx]
+
+
+def get_opposite_direction(degrees):
+    """Get the opposite wind direction (leeward side)."""
+    return (degrees + 180) % 360
+
+
+def calculate_aspect_from_coords(lat, lon, neighbor_lat, neighbor_lon):
+    """
+    Estimate slope aspect based on elevation difference with neighbors.
+    Returns aspect in degrees (0=N, 90=E, 180=S, 270=W).
+    """
+    # Get elevations
+    center_elev = get_elevation(lat, lon)
+    neighbor_elev = get_elevation(neighbor_lat, neighbor_lon)
+    
+    # Calculate bearing from center to neighbor
+    dlon = math.radians(neighbor_lon - lon)
+    lat1 = math.radians(lat)
+    lat2 = math.radians(neighbor_lat)
+    
+    x = math.sin(dlon) * math.cos(lat2)
+    y = math.cos(lat1) * math.sin(lat2) - math.sin(lat1) * math.cos(lat2) * math.cos(dlon)
+    bearing = math.degrees(math.atan2(x, y))
+    bearing = (bearing + 360) % 360
+    
+    # If neighbor is lower, the slope faces that direction
+    if neighbor_elev < center_elev:
+        return bearing
+    else:
+        return (bearing + 180) % 360
+
+
+def analyze_wind_loading(lat, lon, wind_direction, wind_speed):
+    """
+    Analyze wind loading risk for a location based on wind and terrain.
+    
+    Wind loading creates dangerous conditions when:
+    - Wind transports snow to leeward (downwind) slopes
+    - Cross-loaded slopes (perpendicular to wind) also accumulate snow
+    - Windward slopes are typically scoured and safer
+    
+    Args:
+        lat, lon: Location coordinates
+        wind_direction: Wind direction in degrees (where wind is coming FROM)
+        wind_speed: Wind speed in m/s
+    
+    Returns:
+        Dictionary with wind loading analysis
+    """
+    result = {
+        'wind_direction': wind_direction,
+        'wind_direction_cardinal': get_cardinal_direction(wind_direction),
+        'wind_speed': wind_speed,
+        'leeward_direction': get_opposite_direction(wind_direction),
+        'leeward_cardinal': get_cardinal_direction(get_opposite_direction(wind_direction)),
+        'loading_risk': 'LOW',
+        'loading_score': 0.0,
+        'affected_aspects': [],
+        'safe_aspects': [],
+        'recommendations': []
+    }
+    
+    # Wind loading only significant above ~5 m/s (moderate breeze)
+    if wind_speed < 5:
+        result['loading_risk'] = 'LOW'
+        result['loading_score'] = 0.1
+        result['recommendations'].append("Light winds - minimal wind loading expected")
+        return result
+    
+    # Calculate affected slope aspects
+    leeward = get_opposite_direction(wind_direction)
+    
+    # Leeward slopes (directly downwind) - HIGHEST RISK
+    # Wind deposits most snow here
+    leeward_aspects = []
+    for offset in [-30, -15, 0, 15, 30]:  # 60° arc on leeward side
+        aspect = (leeward + offset) % 360
+        leeward_aspects.append(aspect)
+    
+    # Cross-loaded slopes (perpendicular to wind) - MODERATE RISK
+    cross_load_left = (wind_direction + 90) % 360
+    cross_load_right = (wind_direction - 90) % 360
+    cross_aspects = []
+    for offset in [-20, 0, 20]:
+        cross_aspects.append((cross_load_left + offset) % 360)
+        cross_aspects.append((cross_load_right + offset) % 360)
+    
+    # Windward slopes - typically SAFER (scoured)
+    windward_aspects = []
+    for offset in [-30, -15, 0, 15, 30]:
+        aspect = (wind_direction + offset) % 360
+        windward_aspects.append(aspect)
+    
+    # Convert to cardinal directions for display
+    def aspects_to_cardinals(aspects):
+        cardinals = set()
+        for a in aspects:
+            cardinals.add(get_cardinal_direction(a))
+        return list(cardinals)
+    
+    result['leeward_aspects'] = aspects_to_cardinals(leeward_aspects)
+    result['cross_load_aspects'] = aspects_to_cardinals(cross_aspects)
+    result['windward_aspects'] = aspects_to_cardinals(windward_aspects)
+    
+    # Determine affected and safe aspects
+    result['affected_aspects'] = result['leeward_aspects'] + result['cross_load_aspects']
+    result['safe_aspects'] = result['windward_aspects']
+    
+    # Calculate loading score based on wind speed
+    # Moderate wind (5-10 m/s): moderate loading
+    # Strong wind (10-15 m/s): significant loading
+    # Very strong wind (>15 m/s): extreme loading
+    if wind_speed >= 15:
+        result['loading_score'] = 0.9
+        result['loading_risk'] = 'EXTREME'
+        result['recommendations'].append("Very strong winds creating extreme wind loading")
+        result['recommendations'].append("Avoid ALL leeward and cross-loaded slopes")
+        result['recommendations'].append("Wind slabs likely on slopes facing: " + ", ".join(result['leeward_aspects']))
+    elif wind_speed >= 10:
+        result['loading_score'] = 0.7
+        result['loading_risk'] = 'HIGH'
+        result['recommendations'].append("Strong winds creating significant wind loading")
+        result['recommendations'].append("Avoid leeward slopes facing: " + ", ".join(result['leeward_aspects']))
+        result['recommendations'].append("Use caution on cross-loaded slopes")
+    elif wind_speed >= 7:
+        result['loading_score'] = 0.5
+        result['loading_risk'] = 'MODERATE'
+        result['recommendations'].append("Moderate wind loading developing")
+        result['recommendations'].append("Be cautious on leeward slopes facing: " + ", ".join(result['leeward_aspects']))
+    else:
+        result['loading_score'] = 0.25
+        result['loading_risk'] = 'LOW'
+        result['recommendations'].append("Light wind loading possible")
+    
+    # Add general recommendation
+    result['recommendations'].append(f"Safer terrain: windward slopes facing {', '.join(result['windward_aspects'])}")
+    
+    return result
+
+
+def fetch_wind_data_for_analysis(lat, lon):
+    """
+    Fetch current and recent wind data for wind loading analysis.
+    
+    Returns wind direction, speed, and recent wind history.
+    """
+    wind_data = {
+        'current_direction': None,
+        'current_speed': None,
+        'avg_direction_24h': None,
+        'avg_speed_24h': None,
+        'max_speed_24h': None,
+        'wind_history': [],
+        'available': False
+    }
+    
+    try:
+        session = get_http_session()
+        
+        # Fetch current and historical wind data
+        url = "https://api.open-meteo.com/v1/forecast"
+        params = {
+            'latitude': lat,
+            'longitude': lon,
+            'current': ['wind_speed_10m', 'wind_direction_10m', 'wind_gusts_10m'],
+            'hourly': ['wind_speed_10m', 'wind_direction_10m', 'wind_gusts_10m'],
+            'past_hours': 24,
+            'forecast_days': 1,
+            'timezone': 'auto'
+        }
+        
+        response = session.get(url, params=params, timeout=DEFAULT_TIMEOUT)
+        
+        if response.status_code == 200:
+            data = response.json()
+            
+            # Current wind
+            current = data.get('current', {})
+            wind_data['current_direction'] = current.get('wind_direction_10m')
+            wind_data['current_speed'] = current.get('wind_speed_10m')
+            wind_data['current_gusts'] = current.get('wind_gusts_10m')
+            
+            # Historical data for 24h analysis
+            hourly = data.get('hourly', {})
+            speeds = hourly.get('wind_speed_10m', [])
+            directions = hourly.get('wind_direction_10m', [])
+            
+            if speeds and directions:
+                # Last 24 hours
+                recent_speeds = [s for s in speeds[:24] if s is not None]
+                recent_dirs = [d for d in directions[:24] if d is not None]
+                
+                if recent_speeds:
+                    wind_data['avg_speed_24h'] = sum(recent_speeds) / len(recent_speeds)
+                    wind_data['max_speed_24h'] = max(recent_speeds)
+                
+                if recent_dirs:
+                    # Calculate average direction using circular mean
+                    sin_sum = sum(math.sin(math.radians(d)) for d in recent_dirs)
+                    cos_sum = sum(math.cos(math.radians(d)) for d in recent_dirs)
+                    wind_data['avg_direction_24h'] = math.degrees(math.atan2(sin_sum, cos_sum)) % 360
+                
+                # Store recent history
+                for i, (s, d) in enumerate(zip(speeds[:24], directions[:24])):
+                    if s is not None and d is not None:
+                        wind_data['wind_history'].append({
+                            'hours_ago': 24 - i,
+                            'speed': s,
+                            'direction': d
+                        })
+            
+            wind_data['available'] = True
+            
+    except Exception as e:
+        wind_data['error'] = str(e)
+    
+    return wind_data
+
+
+def create_wind_loading_overlay(lat, lon, wind_analysis, radius_km=5):
+    """
+    Create map markers/polygons showing wind loading zones around a point.
+    
+    Returns a list of folium objects to add to a map.
+    """
+    overlays = []
+    
+    if not wind_analysis or wind_analysis['loading_risk'] == 'LOW':
+        return overlays
+    
+    wind_dir = wind_analysis['wind_direction']
+    leeward_dir = wind_analysis['leeward_direction']
+    
+    # Create colored sectors showing risk zones
+    # Each sector is approximately 60 degrees
+    
+    def create_sector_coords(center_lat, center_lon, direction, arc_degrees, radius_km):
+        """Create polygon coordinates for a sector."""
+        coords = [(center_lat, center_lon)]
+        
+        # Convert radius to approximate degrees
+        radius_deg = radius_km / 111  # rough conversion
+        
+        start_angle = direction - arc_degrees / 2
+        end_angle = direction + arc_degrees / 2
+        
+        for angle in range(int(start_angle), int(end_angle) + 1, 5):
+            rad = math.radians(angle)
+            lat_offset = radius_deg * math.cos(rad)
+            lon_offset = radius_deg * math.sin(rad) / math.cos(math.radians(center_lat))
+            coords.append((center_lat + lat_offset, center_lon + lon_offset))
+        
+        coords.append((center_lat, center_lon))
+        return coords
+    
+    # Leeward sector (HIGH RISK) - red
+    leeward_coords = create_sector_coords(lat, lon, leeward_dir, 60, radius_km)
+    leeward_polygon = folium.Polygon(
+        locations=leeward_coords,
+        color='#dc2626',
+        fill=True,
+        fillColor='#dc2626',
+        fillOpacity=0.3,
+        weight=2,
+        popup=f"<b>Leeward Zone (High Risk)</b><br>Wind loading accumulation zone<br>Avoid slopes facing {wind_analysis['leeward_cardinal']}"
+    )
+    overlays.append(('Leeward (High Risk)', leeward_polygon))
+    
+    # Cross-loaded sectors (MODERATE RISK) - orange
+    cross_left = (wind_dir + 90) % 360
+    cross_right = (wind_dir - 90) % 360
+    
+    for cross_dir, label in [(cross_left, 'Left'), (cross_right, 'Right')]:
+        cross_coords = create_sector_coords(lat, lon, cross_dir, 40, radius_km * 0.8)
+        cross_polygon = folium.Polygon(
+            locations=cross_coords,
+            color='#f59e0b',
+            fill=True,
+            fillColor='#f59e0b',
+            fillOpacity=0.25,
+            weight=2,
+            popup=f"<b>Cross-loaded Zone (Moderate Risk)</b><br>Perpendicular wind loading"
+        )
+        overlays.append((f'Cross-loaded {label}', cross_polygon))
+    
+    # Windward sector (SAFER) - green
+    windward_coords = create_sector_coords(lat, lon, wind_dir, 60, radius_km * 0.7)
+    windward_polygon = folium.Polygon(
+        locations=windward_coords,
+        color='#10b981',
+        fill=True,
+        fillColor='#10b981',
+        fillOpacity=0.2,
+        weight=2,
+        popup=f"<b>Windward Zone (Lower Risk)</b><br>Wind-scoured, typically safer<br>Slopes facing {wind_analysis['wind_direction_cardinal']}"
+    )
+    overlays.append(('Windward (Lower Risk)', windward_polygon))
+    
+    # Wind direction arrow
+    arrow_end_lat = lat + (radius_km / 111) * 0.5 * math.cos(math.radians(leeward_dir))
+    arrow_end_lon = lon + (radius_km / 111) * 0.5 * math.sin(math.radians(leeward_dir)) / math.cos(math.radians(lat))
+    
+    wind_arrow = folium.PolyLine(
+        locations=[(lat, lon), (arrow_end_lat, arrow_end_lon)],
+        color='#1f2937',
+        weight=4,
+        opacity=0.8,
+        popup=f"Wind Direction: {wind_analysis['wind_direction_cardinal']} ({wind_analysis['wind_direction']}°)<br>Speed: {wind_analysis['wind_speed']:.1f} m/s"
+    )
+    overlays.append(('Wind Direction', wind_arrow))
+    
+    return overlays
+
+
+def get_wind_loading_for_route(route_analysis, wind_data):
+    """
+    Analyze wind loading risk for each segment of a route.
+    
+    Returns enhanced route analysis with wind loading information.
+    """
+    if not wind_data.get('available') or not route_analysis:
+        return route_analysis
+    
+    wind_dir = wind_data.get('current_direction') or wind_data.get('avg_direction_24h', 0)
+    wind_speed = wind_data.get('current_speed') or wind_data.get('avg_speed_24h', 0)
+    
+    # Analyze wind loading for the area
+    wind_analysis = analyze_wind_loading(
+        route_analysis['analyzed_waypoints'][0][0],
+        route_analysis['analyzed_waypoints'][0][1],
+        wind_dir,
+        wind_speed
+    )
+    
+    route_analysis['wind_loading'] = wind_analysis
+    
+    # Estimate which waypoints are on wind-loaded slopes
+    # This is a simplified estimation based on route direction changes
+    waypoints = route_analysis.get('waypoint_risks', [])
+    
+    for i, wp in enumerate(waypoints):
+        if i == 0:
+            wp['wind_loading_risk'] = 'UNKNOWN'
+            continue
+        
+        # Calculate approximate slope aspect from route direction
+        prev_wp = waypoints[i-1]
+        
+        # Direction of travel
+        dlat = wp['lat'] - prev_wp['lat']
+        dlon = wp['lon'] - prev_wp['lon']
+        travel_dir = math.degrees(math.atan2(dlon, dlat)) % 360
+        
+        # Assume slope faces perpendicular to travel (simplified)
+        # In reality, this would need DEM data
+        slope_aspect = (travel_dir + 90) % 360
+        
+        # Check if this aspect is in the danger zone
+        leeward = wind_analysis['leeward_direction']
+        diff = abs(slope_aspect - leeward)
+        if diff > 180:
+            diff = 360 - diff
+        
+        if diff < 30:
+            wp['wind_loading_risk'] = 'HIGH'
+            wp['risk_factors'].append(f"Wind-loaded leeward slope")
+            wp['risk_score'] = min(1.0, wp['risk_score'] + 0.2)
+        elif diff < 60:
+            wp['wind_loading_risk'] = 'MODERATE'
+            wp['risk_factors'].append(f"Cross-loaded slope")
+            wp['risk_score'] = min(1.0, wp['risk_score'] + 0.1)
+        else:
+            wp['wind_loading_risk'] = 'LOW'
+    
+    # Recalculate route summary
+    risk_scores = [wp['risk_score'] for wp in waypoints if wp.get('success', False)]
+    if risk_scores:
+        route_analysis['route_summary']['max_risk_score'] = max(risk_scores)
+        route_analysis['route_summary']['avg_risk_score'] = sum(risk_scores) / len(risk_scores)
+        
+        max_risk = route_analysis['route_summary']['max_risk_score']
+        if max_risk >= 0.6:
+            route_analysis['route_summary']['overall_risk_level'] = "HIGH"
+            route_analysis['route_summary']['overall_message'] = "Dangerous sections including wind-loaded slopes"
+        elif max_risk >= 0.35:
+            route_analysis['route_summary']['overall_risk_level'] = "MODERATE"
+    
+    return route_analysis
+
+
+# ============================================
 # ROUTE RISK ANALYSIS
 # ============================================
 
@@ -3171,6 +3572,122 @@ if analysis_mode == "🗺️ Route Analysis":
                 • Monitor weather and re-evaluate if conditions change
             </div>
             """, unsafe_allow_html=True)
+        
+        # ============================================
+        # WIND LOADING ANALYSIS (Route Mode)
+        # ============================================
+        st.markdown('<p class="section-header">Wind Loading Analysis</p>', unsafe_allow_html=True)
+        
+        # Get wind data for the route start point
+        start_wp = st.session_state.route_waypoints[0] if st.session_state.route_waypoints else None
+        if start_wp:
+            with st.spinner("Analyzing wind loading zones..."):
+                wind_data = fetch_wind_data_for_analysis(start_wp[0], start_wp[1])
+            
+            if wind_data.get('available'):
+                wind_dir = wind_data.get('current_direction') or wind_data.get('avg_direction_24h', 0)
+                wind_speed = wind_data.get('current_speed') or wind_data.get('avg_speed_24h', 0)
+                
+                wind_analysis = analyze_wind_loading(start_wp[0], start_wp[1], wind_dir, wind_speed)
+                
+                # Display wind info
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    st.metric("Wind Direction", f"{wind_analysis['wind_direction_cardinal']}")
+                with col2:
+                    st.metric("Wind Speed", f"{wind_speed:.1f} m/s")
+                with col3:
+                    st.metric("Loading Risk", wind_analysis['loading_risk'])
+                with col4:
+                    max_gust = wind_data.get('current_gusts') or wind_data.get('max_speed_24h', 0)
+                    st.metric("Max Gusts (24h)", f"{max_gust:.1f} m/s")
+                
+                # Risk display card
+                loading_risk = wind_analysis['loading_risk']
+                if loading_risk == "EXTREME":
+                    loading_class = "risk-high"
+                elif loading_risk == "HIGH":
+                    loading_class = "risk-high"
+                elif loading_risk == "MODERATE":
+                    loading_class = "risk-medium"
+                else:
+                    loading_class = "risk-low"
+                
+                st.markdown(f"""
+                <div style="background: {'#fef2f2' if loading_risk in ['HIGH', 'EXTREME'] else '#fffbeb' if loading_risk == 'MODERATE' else '#f0fdf4'}; 
+                            border-left: 4px solid {'#dc2626' if loading_risk in ['HIGH', 'EXTREME'] else '#f59e0b' if loading_risk == 'MODERATE' else '#10b981'};
+                            padding: 1rem; border-radius: 0 8px 8px 0; margin: 1rem 0;">
+                    <strong>Wind Loading: {loading_risk}</strong><br>
+                    <span style="font-size: 0.9rem;">
+                        Wind from <strong>{wind_analysis['wind_direction_cardinal']}</strong> ({wind_analysis['wind_direction']}°) at <strong>{wind_speed:.1f} m/s</strong><br>
+                        Leeward (danger) slopes face: <strong>{wind_analysis['leeward_cardinal']}</strong>
+                    </span>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                # Affected slopes
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.markdown("**Slopes to Avoid (Wind Loaded):**")
+                    affected = wind_analysis.get('affected_aspects', [])
+                    if affected:
+                        st.markdown(f"• Leeward: {', '.join(wind_analysis.get('leeward_aspects', []))}")
+                        st.markdown(f"• Cross-loaded: {', '.join(wind_analysis.get('cross_load_aspects', []))}")
+                    else:
+                        st.markdown("• Minimal wind loading expected")
+                
+                with col2:
+                    st.markdown("**Safer Slopes (Windward):**")
+                    safe = wind_analysis.get('safe_aspects', [])
+                    if safe:
+                        st.markdown(f"• {', '.join(safe)}")
+                    else:
+                        st.markdown("• All aspects relatively similar")
+                
+                # Recommendations
+                st.markdown("**Wind Loading Recommendations:**")
+                for rec in wind_analysis.get('recommendations', []):
+                    st.markdown(f"• {rec}")
+                
+                # Show wind loading overlay on a map
+                with st.expander("View Wind Loading Zones on Map"):
+                    wind_map = folium.Map(
+                        location=[start_wp[0], start_wp[1]],
+                        zoom_start=12,
+                        tiles='OpenTopoMap'
+                    )
+                    
+                    # Add wind loading overlays
+                    overlays = create_wind_loading_overlay(start_wp[0], start_wp[1], wind_analysis, radius_km=3)
+                    for name, overlay in overlays:
+                        overlay.add_to(wind_map)
+                    
+                    # Add route
+                    if st.session_state.route_waypoints:
+                        folium.PolyLine(
+                            locations=st.session_state.route_waypoints,
+                            color='#3b82f6',
+                            weight=3,
+                            opacity=0.8
+                        ).add_to(wind_map)
+                    
+                    # Legend
+                    legend_html = '''
+                    <div style="position: fixed; bottom: 50px; left: 50px; z-index: 1000;
+                                background: white; padding: 10px; border-radius: 5px;
+                                box-shadow: 0 2px 6px rgba(0,0,0,0.3); font-size: 12px;">
+                        <strong>Wind Loading Zones</strong><br>
+                        <span style="color: #dc2626;">■</span> Leeward (High Risk)<br>
+                        <span style="color: #f59e0b;">■</span> Cross-loaded (Moderate)<br>
+                        <span style="color: #10b981;">■</span> Windward (Lower Risk)<br>
+                        <span style="color: #1f2937;">→</span> Wind Direction
+                    </div>
+                    '''
+                    wind_map.get_root().html.add_child(folium.Element(legend_html))
+                    
+                    st_folium(wind_map, width=None, height=400, key="wind_loading_map")
+            else:
+                st.info("Wind data not available for this location")
 
 
 # ============================================
@@ -3180,15 +3697,12 @@ else:
     # Location selection
     st.markdown('<p class="section-header">Location</p>', unsafe_allow_html=True)
 
-    col_loc1, col_loc2 = st.columns([3, 1])
-
-    with col_loc1:
-        data_source = st.radio(
-            "Data input method",
-            ["Automatic (satellite data)", "Manual entry"],
-            horizontal=True,
-            label_visibility="collapsed"
-        )
+    data_source = st.radio(
+        "Data input method",
+        ["Automatic (satellite data)", "Manual entry"],
+        horizontal=True,
+        label_visibility="collapsed"
+    )
 
     if data_source == "Automatic (satellite data)":
         
@@ -3269,56 +3783,31 @@ else:
     
     st.markdown("")  # Spacing
     
-    with col_loc2:
-        fetch_location = st.button("Fetch data", type="primary")
+    # Set location from map click (without fetching data yet)
+    if location_tab == "Select on map" and st.session_state.get('map_clicked_lat'):
+        if st.session_state.location is None or \
+           st.session_state.location.get('latitude') != st.session_state.map_clicked_lat or \
+           st.session_state.location.get('longitude') != st.session_state.map_clicked_lon:
+            st.session_state.location = create_location_from_coords(
+                st.session_state.map_clicked_lat, 
+                st.session_state.map_clicked_lon
+            )
+            st.session_state.location['elevation'] = get_elevation(
+                st.session_state.map_clicked_lat, 
+                st.session_state.map_clicked_lon
+            )
+            # Clear old satellite data when location changes
+            st.session_state.satellite_raw = None
+            st.session_state.env_data = None
     
-    # Determine if we should fetch location
-    should_fetch = fetch_location or st.session_state.location is None
-    
-    if should_fetch and st.session_state.ip_consent:
-        if location_tab == "Select on map":
-            if st.session_state.get('map_clicked_lat'):
-                st.session_state.location = create_location_from_coords(
-                    st.session_state.map_clicked_lat, 
-                    st.session_state.map_clicked_lon
-                )
-                lat = st.session_state.location['latitude']
-                lon = st.session_state.location['longitude']
-                st.session_state.location['elevation'] = get_elevation(lat, lon)
-            else:
-                st.warning("Please select a location on the map first.")
-                should_fetch = False
-        else:
-            with st.spinner("Getting location..."):
+    # Set location from IP
+    if location_tab == "Use my IP address" and st.session_state.user_ip and st.session_state.ip_consent:
+        if st.session_state.location is None:
+            with st.spinner("Getting location from IP..."):
                 st.session_state.location = get_user_location(st.session_state.user_ip)
                 lat = st.session_state.location['latitude']
                 lon = st.session_state.location['longitude']
                 st.session_state.location['elevation'] = get_elevation(lat, lon)
-        
-        if should_fetch and st.session_state.location:
-            progress_bar = st.progress(0)
-            status_text = st.empty()
-            
-            def update_progress(progress, text):
-                progress_bar.progress(progress)
-                status_text.text(text.replace("🛰️ ", "").replace("Fetching ", "Loading "))
-            
-            with st.spinner("Loading satellite data..."):
-                lat = st.session_state.location['latitude']
-                lon = st.session_state.location['longitude']
-                
-                st.session_state.satellite_raw = fetch_all_satellite_data(lat, lon, update_progress)
-                
-                elevation = st.session_state.location.get('elevation', 1500)
-                st.session_state.env_data, st.session_state.data_sources = process_satellite_data(
-                    st.session_state.satellite_raw, 
-                    elevation
-                )
-            
-            progress_bar.empty()
-            status_text.empty()
-    elif should_fetch and not st.session_state.ip_consent:
-        st.warning("Please detect your location or select one on the map.")
     
     # Display location info
     if st.session_state.location:
@@ -3345,13 +3834,6 @@ else:
                 new_lon = st.number_input("Longitude", value=float(loc['longitude']), min_value=-180.0, max_value=180.0, step=0.01)
             
             if st.button("Update location"):
-                progress_bar = st.progress(0)
-                status_text = st.empty()
-                
-                def update_progress(progress, text):
-                    progress_bar.progress(progress)
-                    status_text.text(text.replace("🛰️ ", ""))
-                
                 st.session_state.location['latitude'] = new_lat
                 st.session_state.location['longitude'] = new_lon
                 st.session_state.location['elevation'] = get_elevation(new_lat, new_lon)
@@ -3362,14 +3844,11 @@ else:
                     st.session_state.location['region'] = reverse_geo.get('region', 'Unknown')
                     st.session_state.location['country'] = reverse_geo.get('country', 'Unknown')
                 
-                st.session_state.satellite_raw = fetch_all_satellite_data(new_lat, new_lon, update_progress)
-                st.session_state.env_data, st.session_state.data_sources = process_satellite_data(
-                    st.session_state.satellite_raw,
-                    st.session_state.location['elevation']
-                )
+                # Clear cached data so it will be fetched on next assessment
+                st.session_state.satellite_raw = None
+                st.session_state.env_data = None
                 
-                progress_bar.empty()
-                status_text.empty()
+                st.success("Location updated! Click 'Run Assessment' to analyze this location.")
                 st.rerun()
     
     # Display satellite data status (compact version)
@@ -3466,20 +3945,49 @@ def get_input_value(key, default=0.0, min_val=None, max_val=None):
 if analysis_mode == "📍 Single Point":
     st.markdown('<p class="section-header">Risk Assessment</p>', unsafe_allow_html=True)
 
-    # Prepare input data from satellite data (using NaN for missing values instead of 0)
-    if st.session_state.env_data:
-        for feature in features_for_input:
-            if feature in st.session_state.env_data and st.session_state.env_data[feature] is not None:
-                st.session_state.inputs[feature] = st.session_state.env_data[feature]
-            else:
-                st.session_state.inputs[feature] = np.nan  # Use NaN for missing, imputer will handle it
-
     col1, col2, col3 = st.columns([1, 2, 1])
 
     with col2:
-        predict_button = st.button("Run Assessment", type="primary", use_container_width=True)
+        # Check if location is set
+        if st.session_state.location:
+            predict_button = st.button("Run Assessment", type="primary", use_container_width=True)
+        else:
+            st.warning("Please select a location on the map first")
+            predict_button = False
 
     if predict_button:
+        # First, fetch satellite data if not already loaded
+        if st.session_state.satellite_raw is None or st.session_state.env_data is None:
+            progress_bar = st.progress(0)
+            status_text = st.empty()
+            
+            def update_progress(progress, text):
+                progress_bar.progress(progress)
+                status_text.text(text.replace("🛰️ ", "").replace("Fetching ", "Loading "))
+            
+            with st.spinner("Loading satellite data..."):
+                lat = st.session_state.location['latitude']
+                lon = st.session_state.location['longitude']
+                
+                st.session_state.satellite_raw = fetch_all_satellite_data(lat, lon, update_progress)
+                
+                elevation = st.session_state.location.get('elevation', 1500)
+                st.session_state.env_data, st.session_state.data_sources = process_satellite_data(
+                    st.session_state.satellite_raw, 
+                    elevation
+                )
+            
+            progress_bar.empty()
+            status_text.empty()
+        
+        # Prepare input data from satellite data (using NaN for missing values instead of 0)
+        if st.session_state.env_data:
+            for feature in features_for_input:
+                if feature in st.session_state.env_data and st.session_state.env_data[feature] is not None:
+                    st.session_state.inputs[feature] = st.session_state.env_data[feature]
+                else:
+                    st.session_state.inputs[feature] = np.nan  # Use NaN for missing, imputer will handle it
+        
         # Create input data - use NaN for missing values (imputer will handle them)
         input_values = []
         for f in features_for_input:
@@ -3767,6 +4275,150 @@ if analysis_mode == "📍 Single Point":
                 • Check for updated forecasts
             </div>
             """, unsafe_allow_html=True)
+        
+        # ============================================
+        # WIND LOADING ANALYSIS (Single Point Mode)
+        # ============================================
+        if st.session_state.location:
+            st.markdown('<p class="section-header">Wind Loading Zones</p>', unsafe_allow_html=True)
+            
+            loc = st.session_state.location
+            lat = loc['latitude']
+            lon = loc['longitude']
+            
+            # Fetch wind data
+            wind_data = fetch_wind_data_for_analysis(lat, lon)
+            
+            if wind_data.get('available'):
+                wind_dir = wind_data.get('current_direction') or wind_data.get('avg_direction_24h', 0)
+                wind_speed = wind_data.get('current_speed') or wind_data.get('avg_speed_24h', 0)
+                
+                wind_analysis = analyze_wind_loading(lat, lon, wind_dir, wind_speed)
+                
+                # Display wind metrics
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    st.metric("Wind From", f"{wind_analysis['wind_direction_cardinal']}")
+                with col2:
+                    st.metric("Wind Speed", f"{wind_speed:.1f} m/s")
+                with col3:
+                    st.metric("Loading Risk", wind_analysis['loading_risk'])
+                with col4:
+                    max_gust = wind_data.get('current_gusts') or wind_data.get('max_speed_24h', 0)
+                    st.metric("Gusts", f"{max_gust:.1f} m/s")
+                
+                # Risk display
+                loading_risk = wind_analysis['loading_risk']
+                risk_colors = {
+                    'EXTREME': ('#fef2f2', '#dc2626'),
+                    'HIGH': ('#fef2f2', '#dc2626'),
+                    'MODERATE': ('#fffbeb', '#f59e0b'),
+                    'LOW': ('#f0fdf4', '#10b981')
+                }
+                bg_color, border_color = risk_colors.get(loading_risk, ('#f9fafb', '#6b7280'))
+                
+                st.markdown(f"""
+                <div style="background: {bg_color}; 
+                            border-left: 4px solid {border_color};
+                            padding: 1rem; border-radius: 0 8px 8px 0; margin: 1rem 0;">
+                    <strong>Wind Loading: {loading_risk}</strong><br>
+                    <span style="font-size: 0.9rem;">
+                        Wind from <strong>{wind_analysis['wind_direction_cardinal']}</strong> ({wind_analysis['wind_direction']}°)<br>
+                        Danger slopes (leeward): <strong>{wind_analysis['leeward_cardinal']}</strong> facing
+                    </span>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                # Aspect recommendations
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.markdown("**Avoid (Wind Loaded):**")
+                    leeward = wind_analysis.get('leeward_aspects', [])
+                    cross = wind_analysis.get('cross_load_aspects', [])
+                    if leeward:
+                        st.markdown(f"🔴 Leeward: {', '.join(leeward)}")
+                    if cross:
+                        st.markdown(f"🟠 Cross-loaded: {', '.join(cross)}")
+                    if not leeward and not cross:
+                        st.markdown("• Light winds - minimal loading")
+                
+                with col2:
+                    st.markdown("**Prefer (Windward/Safe):**")
+                    safe = wind_analysis.get('safe_aspects', [])
+                    if safe:
+                        st.markdown(f"🟢 {', '.join(safe)}")
+                    else:
+                        st.markdown("• All aspects similar risk")
+                
+                # Wind loading map
+                with st.expander("View Wind Loading Zones on Map"):
+                    wind_map = folium.Map(
+                        location=[lat, lon],
+                        zoom_start=13,
+                        tiles='OpenStreetMap'
+                    )
+                    
+                    # Add terrain layer
+                    folium.TileLayer(
+                        tiles='https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
+                        attr='OpenTopoMap',
+                        name='Terrain',
+                        overlay=False
+                    ).add_to(wind_map)
+                    
+                    # Add wind loading overlays
+                    overlays = create_wind_loading_overlay(lat, lon, wind_analysis, radius_km=2)
+                    for name, overlay in overlays:
+                        overlay.add_to(wind_map)
+                    
+                    # Center marker
+                    folium.Marker(
+                        [lat, lon],
+                        popup=f"Analysis Point<br>Elevation: {loc.get('elevation', 'N/A')}m",
+                        icon=folium.Icon(color='blue', icon='info-sign')
+                    ).add_to(wind_map)
+                    
+                    folium.LayerControl().add_to(wind_map)
+                    
+                    st.markdown("""
+                    <div style="font-size: 0.8rem; color: #6b7280; margin-bottom: 0.5rem;">
+                        <strong>Legend:</strong> 
+                        <span style="color: #dc2626;">■</span> Leeward (High Risk) · 
+                        <span style="color: #f59e0b;">■</span> Cross-loaded (Moderate) · 
+                        <span style="color: #10b981;">■</span> Windward (Lower Risk) · 
+                        <span style="color: #1f2937;">→</span> Wind Direction
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    st_folium(wind_map, width=None, height=400, key="single_point_wind_map")
+                
+                # Detailed recommendations
+                with st.expander("Wind Loading Details"):
+                    st.markdown("**How Wind Loading Creates Avalanche Danger:**")
+                    st.markdown("""
+                    Wind transports loose snow and deposits it on **leeward** (downwind) slopes, 
+                    creating dense, cohesive **wind slabs** that can release as avalanches.
+                    
+                    - **Leeward slopes** (facing away from wind): Highest accumulation, greatest danger
+                    - **Cross-loaded slopes** (perpendicular to wind): Moderate accumulation risk
+                    - **Windward slopes** (facing into wind): Usually scoured, relatively safer
+                    """)
+                    
+                    if wind_analysis.get('recommendations'):
+                        st.markdown("**Current Conditions:**")
+                        for rec in wind_analysis['recommendations']:
+                            st.markdown(f"• {rec}")
+                    
+                    # 24h wind history
+                    if wind_data.get('avg_speed_24h'):
+                        st.markdown(f"""
+                        **24-Hour Wind Summary:**
+                        - Average speed: {wind_data['avg_speed_24h']:.1f} m/s
+                        - Maximum speed: {wind_data.get('max_speed_24h', 0):.1f} m/s
+                        - Predominant direction: {get_cardinal_direction(wind_data.get('avg_direction_24h', 0))}
+                        """)
+            else:
+                st.info("Wind data not available for this location")
 
 # Footer
 st.markdown("")
