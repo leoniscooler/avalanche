@@ -3936,9 +3936,9 @@ def get_input_value(key, default=0.0, min_val=None, max_val=None):
 if analysis_mode == "📍 Single Point":
     st.markdown('<p class="section-header">Risk Assessment</p>', unsafe_allow_html=True)
 
-    col1, col2, col3 = st.columns([1, 2, 1])
+    col1, col2 = st.columns([1, 3])
 
-    with col2:
+    with col1:
         # Check if location is set
         if st.session_state.location:
             predict_button = st.button("Run Assessment", type="primary", use_container_width=True)
@@ -4248,9 +4248,9 @@ if analysis_mode == "📍 Single Point":
         
         st.markdown("")  # Spacing
         
-        col1, col2, col3 = st.columns([1, 2, 1])
+        col1, col2 = st.columns([1, 2])
         
-        with col2:
+        with col1:
             st.markdown(f"""
             <div class="risk-card {results['risk_class']}">
                 <div class="risk-label">Avalanche Risk</div>
