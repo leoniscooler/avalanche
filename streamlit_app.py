@@ -3257,7 +3257,7 @@ def create_forecast_chart(forecast_data):
 # Page configuration
 st.set_page_config(
     page_title="Avalanche Risk Assessment",
-    page_icon="⛰️",
+    page_icon="📊",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
@@ -3460,7 +3460,7 @@ st.markdown("""
 # Header
 st.markdown("""
 <div class="app-header">
-    <h1 class="app-title">⛰️ Avalanche Risk Assessment</h1>
+    <h1 class="app-title">Avalanche Risk Assessment</h1>
     <p class="app-subtitle">Real-time analysis using satellite and weather station data</p>
 </div>
 """, unsafe_allow_html=True)
@@ -4077,7 +4077,11 @@ st.markdown("")  # Spacing
 # Sidebar - minimal and clean
 st.sidebar.markdown("### About")
 st.sidebar.markdown("""
-This tool assesses avalanche risk using real-time data from satellite systems and weather stations.
+This tool uses a **Physics-Informed Neural Network (PINN)** trained to assess avalanche risk by integrating real-time satellite and weather station data with physical snowpack mechanics.
+
+**Model Training:**
+- Trained using PINNs that embed physical laws (e.g., snow stability equations) into the neural network loss function
+- Combines data-driven learning with domain physics for improved accuracy and interpretability
 
 **Data Sources:**
 - MODIS & VIIRS satellites
