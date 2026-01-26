@@ -3787,8 +3787,8 @@ else:
     
     st.markdown("")  # Spacing
     
-    # Set location from map click (without fetching data yet)
-    if location_tab == "Select on map" and st.session_state.get('map_clicked_lat'):
+    # Set location from map click (works regardless of which tab is selected)
+    if st.session_state.get('map_clicked_lat'):
         if st.session_state.location is None or \
            st.session_state.location.get('latitude') != st.session_state.map_clicked_lat or \
            st.session_state.location.get('longitude') != st.session_state.map_clicked_lon:
@@ -3806,7 +3806,7 @@ else:
             st.session_state.assessment_results = None
             st.session_state.wind_loading_results = None
     
-    # Set location from IP
+    # Set location from IP (if that tab is selected and no map click yet)
     if location_tab == "Use my IP address" and st.session_state.user_ip and st.session_state.ip_consent:
         if st.session_state.location is None:
             with st.spinner("Getting location from IP..."):
