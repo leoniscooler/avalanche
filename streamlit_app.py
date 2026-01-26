@@ -3262,7 +3262,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Clean, professional CSS
+# Clean, professional CSS with mobile responsiveness
 st.markdown("""
 <style>
     /* Clean typography */
@@ -3270,6 +3270,12 @@ st.markdown("""
     
     .stApp {
         font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    }
+    
+    /* Mobile-friendly viewport */
+    html, body {
+        -webkit-text-size-adjust: 100%;
+        touch-action: manipulation;
     }
     
     /* Header styling */
@@ -3453,6 +3459,233 @@ st.markdown("""
     .streamlit-expanderHeader {
         font-size: 0.875rem;
         font-weight: 500;
+    }
+    
+    /* ===== MOBILE RESPONSIVE STYLES ===== */
+    
+    /* Smaller screens (tablets) */
+    @media screen and (max-width: 768px) {
+        .main .block-container {
+            padding: 0.5rem 1rem !important;
+            max-width: 100% !important;
+        }
+        
+        .app-header {
+            padding: 1rem 0 0.75rem 0;
+            margin-bottom: 1rem;
+        }
+        
+        .app-title {
+            font-size: 1.4rem;
+        }
+        
+        .app-subtitle {
+            font-size: 0.8rem;
+        }
+        
+        .risk-card {
+            padding: 1.25rem 1rem;
+            margin: 0.75rem 0;
+        }
+        
+        .risk-level {
+            font-size: 1.75rem;
+        }
+        
+        .risk-confidence {
+            font-size: 0.9rem;
+        }
+        
+        [data-testid="stMetricValue"] {
+            font-size: 1.25rem !important;
+        }
+        
+        [data-testid="stMetricLabel"] {
+            font-size: 0.7rem !important;
+        }
+        
+        /* Stack columns on tablet */
+        [data-testid="column"] {
+            width: 100% !important;
+            flex: 1 1 100% !important;
+        }
+        
+        /* Make map taller on mobile for easier interaction */
+        iframe[title="streamlit_folium.st_folium"] {
+            min-height: 350px !important;
+        }
+        
+        .data-card {
+            padding: 0.75rem;
+        }
+        
+        .data-value {
+            font-size: 1.1rem;
+        }
+    }
+    
+    /* Mobile phones */
+    @media screen and (max-width: 480px) {
+        .main .block-container {
+            padding: 0.25rem 0.5rem !important;
+        }
+        
+        .app-header {
+            padding: 0.75rem 0 0.5rem 0;
+            margin-bottom: 0.75rem;
+        }
+        
+        .app-title {
+            font-size: 1.2rem;
+        }
+        
+        .app-subtitle {
+            font-size: 0.75rem;
+        }
+        
+        .risk-card {
+            padding: 1rem 0.75rem;
+            border-radius: 10px;
+            margin: 0.5rem 0;
+        }
+        
+        .risk-level {
+            font-size: 1.5rem;
+        }
+        
+        .risk-label {
+            font-size: 0.65rem;
+        }
+        
+        .risk-confidence {
+            font-size: 0.85rem;
+        }
+        
+        [data-testid="stMetricValue"] {
+            font-size: 1.1rem !important;
+        }
+        
+        [data-testid="stMetricLabel"] {
+            font-size: 0.65rem !important;
+        }
+        
+        [data-testid="stMetric"] {
+            padding: 0.5rem !important;
+        }
+        
+        /* Full width buttons on mobile */
+        .stButton > button {
+            width: 100% !important;
+            padding: 0.75rem 1rem;
+            font-size: 1rem;
+            min-height: 48px; /* Touch-friendly size */
+        }
+        
+        /* Make inputs touch-friendly */
+        .stNumberInput input, .stTextInput input {
+            font-size: 16px !important; /* Prevents iOS zoom on focus */
+            padding: 0.75rem !important;
+            min-height: 48px !important;
+        }
+        
+        .stSelectbox > div > div {
+            min-height: 48px !important;
+        }
+        
+        /* Larger touch targets for expanders */
+        .streamlit-expanderHeader {
+            padding: 0.75rem !important;
+            min-height: 48px;
+        }
+        
+        .section-header {
+            font-size: 0.9rem;
+            margin: 1rem 0 0.5rem 0;
+        }
+        
+        .info-box, .warning-box {
+            padding: 0.625rem 0.75rem;
+            font-size: 0.8rem;
+        }
+        
+        .source-tag {
+            font-size: 0.65rem;
+            padding: 0.1rem 0.375rem;
+        }
+        
+        /* Hide sidebar toggle on very small screens if needed */
+        [data-testid="stSidebarNav"] {
+            padding-top: 0.5rem;
+        }
+        
+        /* Adjust charts for mobile */
+        [data-testid="stVegaLiteChart"] {
+            overflow-x: auto;
+        }
+        
+        /* Make map full width and taller on phones */
+        iframe[title="streamlit_folium.st_folium"] {
+            min-height: 300px !important;
+            width: 100% !important;
+        }
+        
+        /* Scrollable dataframes */
+        [data-testid="stDataFrame"] {
+            overflow-x: auto !important;
+        }
+        
+        /* Forecast day cards - smaller on mobile */
+        .forecast-day {
+            padding: 0.5rem !important;
+            font-size: 0.8rem;
+        }
+    }
+    
+    /* Landscape mode on phones */
+    @media screen and (max-width: 896px) and (orientation: landscape) {
+        .main .block-container {
+            padding: 0.5rem 1rem !important;
+        }
+        
+        .risk-card {
+            padding: 0.75rem;
+        }
+        
+        .risk-level {
+            font-size: 1.5rem;
+        }
+        
+        iframe[title="streamlit_folium.st_folium"] {
+            min-height: 250px !important;
+        }
+    }
+    
+    /* Touch-friendly improvements */
+    @media (hover: none) and (pointer: coarse) {
+        /* Remove hover effects on touch devices */
+        .stButton > button:hover {
+            transform: none;
+            box-shadow: none;
+        }
+        
+        /* Add active states instead */
+        .stButton > button:active {
+            transform: scale(0.98);
+            opacity: 0.9;
+        }
+        
+        /* Ensure adequate spacing for touch */
+        .stRadio > div > label {
+            padding: 0.5rem !important;
+            min-height: 44px;
+            display: flex;
+            align-items: center;
+        }
+        
+        .stCheckbox > label {
+            padding: 0.5rem !important;
+            min-height: 44px;
+        }
     }
 </style>
 """, unsafe_allow_html=True)
