@@ -4090,283 +4090,106 @@ else:
     # Location selection
     st.markdown('<p class="section-header">Location</p>', unsafe_allow_html=True)
 
-    # Search bar and detect location button side by side
-    col_search, col_detect = st.columns([3, 1])
+    # Auto-detect location button with HTML5 Geolocation API
+    # Initialize geolocation state
+    if 'geo_coords_received' not in st.session_state:
+        st.session_state.geo_coords_received = None
     
-    with col_search:
-        # Location search bar (like Google Maps)
-        search_query = st.text_input(
-            "🔍 Search for a location",
-            placeholder="Enter city, mountain, ski resort, address...",
-            key="location_search",
-            help="Search for any location (e.g., 'Kirkwood Ski Resort', 'Aspen CO', 'Mt Rainier')",
-            label_visibility="collapsed"
-        )
+    col_btn, col_status = st.columns([1, 2])
     
-    with col_detect:
-        detect_btn = st.button("📍 Detect My Location", type="secondary", use_container_width=True)
+    with col_btn:
+        detect_btn = st.button("📍 Auto-Detect My Location", type="primary", use_container_width=True)
     
-    # HTML5 Geolocation API implementation
+    # Hidden input to receive coordinates from JavaScript
+    geo_input = st.text_input("geo_coords", key="geo_coords_input", label_visibility="collapsed", 
+                               placeholder="Coordinates will appear here...")
+    
+    # Process coordinates if received
+    if geo_input and ',' in geo_input and geo_input != st.session_state.geo_coords_received:
+        try:
+            parts = geo_input.split(',')
+            if len(parts) >= 2:
+                lat = float(parts[0].strip())
+                lon = float(parts[1].strip())
+                
+                if -90 <= lat <= 90 and -180 <= lon <= 180:
+                    st.session_state.geo_coords_received = geo_input
+                    st.session_state.map_clicked_lat = lat
+                    st.session_state.map_clicked_lon = lon
+                    
+                    # Create location from coordinates
+                    st.session_state.location = create_location_from_coords(lat, lon)
+                    st.session_state.location['elevation'] = get_elevation(lat, lon)
+                    st.session_state.location['source'] = 'GPS/Browser Geolocation'
+                    
+                    # Clear old data
+                    st.session_state.satellite_raw = None
+                    st.session_state.env_data = None
+                    st.session_state.assessment_results = None
+                    st.session_state.wind_loading_results = None
+                    
+                    st.success(f"✅ Location detected and set: {lat:.4f}°, {lon:.4f}°")
+                    st.rerun()
+        except (ValueError, IndexError):
+            pass
+    
+    # JavaScript for HTML5 Geolocation - runs when button is clicked
     if detect_btn:
-        # Inject JavaScript for browser geolocation
-        geolocation_html = """
-        <div id="geo-container" style="padding: 12px; background: linear-gradient(135deg, #e0f2fe 0%, #f0f9ff 100%); border-radius: 10px; margin: 10px 0; border: 1px solid #bae6fd;">
-            <div id="geo-status" style="display: flex; align-items: center; gap: 10px;">
-                <div id="geo-spinner" style="width: 20px; height: 20px; border: 3px solid #0ea5e9; border-top-color: transparent; border-radius: 50%; animation: spin 1s linear infinite;"></div>
-                <span id="geo-text" style="color: #0369a1; font-weight: 500;">Requesting location access...</span>
-            </div>
-            <div id="geo-result" style="display: none; margin-top: 10px;"></div>
-        </div>
-        
-        <style>
-            @keyframes spin { to { transform: rotate(360deg); } }
-        </style>
-        
+        geolocation_js = """
         <script>
         (function() {
-            const statusDiv = document.getElementById('geo-status');
-            const resultDiv = document.getElementById('geo-result');
-            const spinner = document.getElementById('geo-spinner');
-            const textEl = document.getElementById('geo-text');
+            // Find the text input for coordinates
+            const inputs = parent.document.querySelectorAll('input[type="text"]');
+            let coordInput = null;
+            for (let input of inputs) {
+                if (input.placeholder && input.placeholder.includes('Coordinates')) {
+                    coordInput = input;
+                    break;
+                }
+            }
             
             if (navigator.geolocation) {
                 navigator.geolocation.getCurrentPosition(
                     function(position) {
                         const lat = position.coords.latitude;
                         const lon = position.coords.longitude;
-                        const accuracy = position.coords.accuracy;
                         
-                        spinner.style.display = 'none';
-                        textEl.innerHTML = '✅ <strong>Location detected!</strong>';
-                        textEl.style.color = '#059669';
-                        
-                        resultDiv.style.display = 'block';
-                        resultDiv.innerHTML = `
-                            <div style="background: white; padding: 12px; border-radius: 8px; margin-top: 8px;">
-                                <div style="font-size: 1.1em; font-weight: 600; color: #1e293b; margin-bottom: 8px;">
-                                    📍 Your Coordinates
-                                </div>
-                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px;">
-                                    <div style="background: #f1f5f9; padding: 8px; border-radius: 6px;">
-                                        <div style="font-size: 0.75em; color: #64748b; text-transform: uppercase;">Latitude</div>
-                                        <div style="font-size: 1.1em; font-weight: 600; color: #0f172a;">${lat.toFixed(6)}°</div>
-                                    </div>
-                                    <div style="background: #f1f5f9; padding: 8px; border-radius: 6px;">
-                                        <div style="font-size: 0.75em; color: #64748b; text-transform: uppercase;">Longitude</div>
-                                        <div style="font-size: 1.1em; font-weight: 600; color: #0f172a;">${lon.toFixed(6)}°</div>
-                                    </div>
-                                </div>
-                                <div style="font-size: 0.85em; color: #64748b; margin-bottom: 12px;">
-                                    Accuracy: ~${Math.round(accuracy)} meters
-                                </div>
-                                <div style="background: #fef3c7; padding: 10px; border-radius: 6px; font-size: 0.9em; color: #92400e;">
-                                    <strong>👆 Copy these coordinates</strong> and paste them in the <strong>"Adjust location"</strong> section below, then click "Update location".
-                                </div>
-                            </div>
-                        `;
-                        
-                        // Store in window for potential access
-                        window.DETECTED_COORDS = { lat: lat, lon: lon, accuracy: accuracy };
+                        if (coordInput) {
+                            // Set value and trigger React's onChange
+                            const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+                            nativeInputValueSetter.call(coordInput, lat.toFixed(6) + ',' + lon.toFixed(6));
+                            coordInput.dispatchEvent(new Event('input', { bubbles: true }));
+                            
+                            // Also try to trigger change event
+                            coordInput.dispatchEvent(new Event('change', { bubbles: true }));
+                        }
                     },
                     function(error) {
-                        spinner.style.display = 'none';
-                        let errorMsg = '';
+                        let msg = 'Location error: ';
                         switch(error.code) {
-                            case error.PERMISSION_DENIED:
-                                errorMsg = '❌ <strong>Permission denied.</strong> Please allow location access in your browser settings and try again.';
-                                break;
-                            case error.POSITION_UNAVAILABLE:
-                                errorMsg = '❌ <strong>Location unavailable.</strong> Your device could not determine your position.';
-                                break;
-                            case error.TIMEOUT:
-                                errorMsg = '❌ <strong>Request timed out.</strong> Please try again.';
-                                break;
-                            default:
-                                errorMsg = '❌ <strong>Unknown error.</strong> Please use the search bar or click on the map instead.';
+                            case error.PERMISSION_DENIED: msg += 'Permission denied'; break;
+                            case error.POSITION_UNAVAILABLE: msg += 'Position unavailable'; break;
+                            case error.TIMEOUT: msg += 'Request timed out'; break;
+                            default: msg += 'Unknown error';
                         }
-                        textEl.innerHTML = errorMsg;
-                        textEl.style.color = '#dc2626';
+                        alert(msg + '. Please click on the map to select your location.');
                     },
-                    {
-                        enableHighAccuracy: true,
-                        timeout: 15000,
-                        maximumAge: 0
-                    }
+                    { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
                 );
             } else {
-                spinner.style.display = 'none';
-                textEl.innerHTML = '❌ <strong>Geolocation not supported</strong> by your browser. Please use the search bar or click on the map.';
-                textEl.style.color = '#dc2626';
+                alert('Geolocation not supported. Please click on the map to select your location.');
             }
         })();
         </script>
+        <div style="padding: 10px; background: #e0f2fe; border-radius: 8px; text-align: center;">
+            <span style="color: #0369a1;">📍 Requesting location... Please allow access when prompted.</span>
+        </div>
         """
-        st.components.v1.html(geolocation_html, height=280)
-    
-    # Search for location when user enters a query
-    if search_query:
-        @st.cache_data(ttl=3600)
-        def search_location_enhanced(query):
-            """Enhanced location search with fuzzy matching, typo tolerance, and multiple strategies"""
-            all_results = []
-            seen_coords = set()
-            headers = {'User-Agent': 'AvalancheRiskAssessment/1.0'}
-            
-            # Normalize query
-            query_lower = query.lower().strip()
-            
-            # Common abbreviations and expansions
-            abbreviations = {
-                'mt': 'mount', 'mt.': 'mount',
-                'mtn': 'mountain', 'mtn.': 'mountain',
-                'pk': 'peak', 'pk.': 'peak',
-                'ca': 'california', 'co': 'colorado', 'ut': 'utah', 'wy': 'wyoming',
-                'wa': 'washington', 'or': 'oregon', 'nv': 'nevada', 'az': 'arizona',
-                'nm': 'new mexico', 'id': 'idaho', 'mt': 'montana', 'ak': 'alaska',
-                'vt': 'vermont', 'nh': 'new hampshire', 'me': 'maine', 'ny': 'new york',
-                'st': 'saint', 'st.': 'saint',
-                'n': 'north', 's': 'south', 'e': 'east', 'w': 'west',
-                'natl': 'national', 'nat': 'national',
-                'ski': 'ski resort', 'resort': 'ski resort',
-            }
-            
-            # Generate query variations
-            query_variations = [query]
-            
-            # Add version with expanded abbreviations
-            expanded_query = query_lower
-            for abbr, full in abbreviations.items():
-                # Match whole words only
-                import re
-                expanded_query = re.sub(r'\b' + re.escape(abbr) + r'\b', full, expanded_query, flags=re.IGNORECASE)
-            if expanded_query != query_lower:
-                query_variations.append(expanded_query)
-            
-            # Add "ski resort" suffix if query looks like a ski area
-            ski_keywords = ['ski', 'resort', 'mountain', 'basin', 'valley', 'peak', 'slopes']
-            if not any(kw in query_lower for kw in ['ski resort', 'ski area']):
-                if any(kw in query_lower for kw in ski_keywords) or query_lower.endswith(('wood', 'bowl', 'ridge', 'creek')):
-                    query_variations.append(query + ' ski resort')
-                    query_variations.append(query + ' ski area')
-            
-            # Add common word reorderings
-            words = query.split()
-            if len(words) >= 2:
-                # Try reversed order for two-word queries
-                query_variations.append(' '.join(reversed(words)))
-                # Try with "ski resort" or "mountain" appended
-                query_variations.append(query + ' mountain')
-            
-            def fetch_results(q, search_type='standard'):
-                """Fetch results for a single query"""
-                try:
-                    url = "https://nominatim.openstreetmap.org/search"
-                    params = {
-                        'q': q,
-                        'format': 'json',
-                        'limit': 8,
-                        'addressdetails': 1,
-                        'extratags': 1,
-                        'namedetails': 1
-                    }
-                    
-                    # For ski resorts, add specific amenity search
-                    if 'ski' in q.lower():
-                        params['amenity'] = 'ski'
-                    
-                    response = requests.get(url, params=params, headers=headers, timeout=8)
-                    if response.status_code == 200:
-                        return response.json()
-                except:
-                    pass
-                return []
-            
-            # Try each query variation
-            for variation in query_variations[:6]:  # Limit to prevent too many API calls
-                results = fetch_results(variation)
-                for r in results:
-                    # Create unique key from coordinates (rounded to avoid near-duplicates)
-                    coord_key = (round(float(r.get('lat', 0)), 4), round(float(r.get('lon', 0)), 4))
-                    if coord_key not in seen_coords:
-                        seen_coords.add(coord_key)
-                        # Add relevance score based on query match
-                        name = r.get('display_name', '').lower()
-                        r['_relevance'] = sum(1 for word in query_lower.split() if word in name)
-                        all_results.append(r)
-            
-            # If still no results, try a more aggressive fuzzy search
-            if not all_results:
-                # Try removing common words and searching
-                stop_words = {'the', 'a', 'an', 'of', 'at', 'in', 'on', 'by'}
-                filtered_words = [w for w in query.split() if w.lower() not in stop_words]
-                if filtered_words:
-                    fuzzy_query = ' '.join(filtered_words)
-                    results = fetch_results(fuzzy_query)
-                    for r in results:
-                        coord_key = (round(float(r.get('lat', 0)), 4), round(float(r.get('lon', 0)), 4))
-                        if coord_key not in seen_coords:
-                            seen_coords.add(coord_key)
-                            r['_relevance'] = 0
-                            all_results.append(r)
-            
-            # Sort by relevance score (higher is better), then by importance
-            all_results.sort(key=lambda x: (x.get('_relevance', 0), float(x.get('importance', 0))), reverse=True)
-            
-            return all_results[:8]  # Return top 8 results
-        
-        results = search_location_enhanced(search_query)
-        
-        if results:
-            # Show search results
-            st.markdown("**Search Results:**")
-            
-            for i, result in enumerate(results):
-                display_name = result.get('display_name', 'Unknown location')
-                lat = float(result.get('lat', 0))
-                lon = float(result.get('lon', 0))
-                
-                # Truncate long names
-                if len(display_name) > 80:
-                    display_name = display_name[:77] + "..."
-                
-                col_result, col_btn = st.columns([4, 1])
-                with col_result:
-                    st.caption(f"📍 {display_name}")
-                with col_btn:
-                    if st.button("Select", key=f"search_result_{i}", type="primary"):
-                        st.session_state.map_clicked_lat = lat
-                        st.session_state.map_clicked_lon = lon
-                        
-                        # Get address details
-                        addr = result.get('address', {})
-                        city = addr.get('city') or addr.get('town') or addr.get('village') or addr.get('hamlet') or addr.get('municipality') or 'Unknown'
-                        region = addr.get('state') or addr.get('region') or addr.get('county') or 'Unknown'
-                        country = addr.get('country', 'Unknown')
-                        
-                        st.session_state.location = {
-                            'latitude': lat,
-                            'longitude': lon,
-                            'city': city,
-                            'region': region,
-                            'country': country,
-                            'display_name': result.get('display_name', ''),
-                            'elevation': get_elevation(lat, lon),
-                            'source': 'Location Search'
-                        }
-                        
-                        # Clear old data
-                        st.session_state.satellite_raw = None
-                        st.session_state.env_data = None
-                        st.session_state.assessment_results = None
-                        st.session_state.wind_loading_results = None
-                        st.rerun()
-            
-            st.markdown("---")
-        else:
-            st.warning("No results found. Try a different search term or click on the map below.")
+        st.components.v1.html(geolocation_js, height=60)
+        st.info("👆 If coordinates appear in the box above, press Enter or click outside the box to apply them.")
     
     st.markdown("")
-    st.markdown("Or click anywhere on the map to set your location:")
+    st.caption("Or click anywhere on the map to set your location:")
     
     # Default to North America (Rocky Mountains region)
     default_lat = st.session_state.get('map_clicked_lat') or 40.0
