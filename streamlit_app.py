@@ -3749,12 +3749,12 @@ if analysis_mode == "🗺️ Route Analysis":
     """, unsafe_allow_html=True)
     
     # Route drawing map
-    default_lat = 46.8  # Alps
-    default_lon = 9.8
+    default_lat = 40.0  # North America (Rocky Mountains)
+    default_lon = -105.5
     
     m = folium.Map(
         location=[default_lat, default_lon],
-        zoom_start=8,
+        zoom_start=5,
         tiles='OpenStreetMap'
     )
     
@@ -4119,14 +4119,14 @@ else:
     st.markdown("")
     st.markdown("Or click anywhere on the map to set your location:")
     
-    # Default to Alps region
-    default_lat = st.session_state.get('map_clicked_lat') or 46.8
-    default_lon = st.session_state.get('map_clicked_lon') or 9.8
+    # Default to North America (Rocky Mountains region)
+    default_lat = st.session_state.get('map_clicked_lat') or 40.0
+    default_lon = st.session_state.get('map_clicked_lon') or -105.5
     
     # Create interactive map
     m = folium.Map(
         location=[default_lat, default_lon],
-        zoom_start=6,
+        zoom_start=4,
         tiles='OpenStreetMap'
     )
     
