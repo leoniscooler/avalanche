@@ -3095,6 +3095,162 @@ def create_route_map(route_analysis, center_lat=None, center_lon=None):
 
 
 # ============================================
+# 7-DAY AVALANCHE RISK FORECAST
+# ============================================
+
+def fetch_7day_forecast(lat, lon):
+    """Fetch 7-day weather forecast data from Open-Meteo for avalanche risk prediction."""
+    forecast_data = {
+        'available': False,
+        'daily': []
+    }
+    
+    try:
+        session = get_http_session()
+        
+        # Open-Meteo forecast API - free, no API key needed
+        url = "https://api.open-meteo.com/v1/forecast"
+        params = {
+            'latitude': lat,
+            'longitude': lon,
+            'daily': [
+                'temperature_2m_max',
+                'temperature_2m_min', 
+                'precipitation_sum',
+                'snowfall_sum',
+                'wind_speed_10m_max',
+                'wind_gusts_10m_max',
+                'shortwave_radiation_sum'
+            ],
+            'timezone': 'auto',
+            'forecast_days': 7
+        }
+        
+        response = session.get(url, params=params, timeout=DEFAULT_TIMEOUT)
+        
+        if response.status_code == 200:
+            data = response.json()
+            daily = data.get('daily', {})
+            
+            dates = daily.get('time', [])
+            temp_max = daily.get('temperature_2m_max', [])
+            temp_min = daily.get('temperature_2m_min', [])
+            precip = daily.get('precipitation_sum', [])
+            snowfall = daily.get('snowfall_sum', [])
+            wind_max = daily.get('wind_speed_10m_max', [])
+            wind_gust = daily.get('wind_gusts_10m_max', [])
+            radiation = daily.get('shortwave_radiation_sum', [])
+            
+            for i, date in enumerate(dates):
+                day_data = {
+                    'date': date,
+                    'date_formatted': datetime.strptime(date, '%Y-%m-%d').strftime('%a %d'),
+                    'temp_max': temp_max[i] if i < len(temp_max) else 0,
+                    'temp_min': temp_min[i] if i < len(temp_min) else 0,
+                    'precipitation': precip[i] if i < len(precip) else 0,
+                    'snowfall': snowfall[i] if i < len(snowfall) else 0,
+                    'wind_max': wind_max[i] if i < len(wind_max) else 0,
+                    'wind_gust': wind_gust[i] if i < len(wind_gust) else 0,
+                    'radiation': radiation[i] if i < len(radiation) else 0
+                }
+                
+                # Calculate risk score for this day
+                day_data['risk_score'] = calculate_forecast_risk(day_data)
+                day_data['risk_level'] = get_risk_level_from_score(day_data['risk_score'])
+                
+                forecast_data['daily'].append(day_data)
+            
+            forecast_data['available'] = True
+            
+    except Exception as e:
+        forecast_data['error'] = str(e)
+    
+    return forecast_data
+
+
+def calculate_forecast_risk(day_data):
+    """Calculate avalanche risk score for a forecast day based on weather factors."""
+    risk_score = 0.2  # Base risk
+    
+    # Temperature factors
+    temp_max = day_data.get('temp_max', 0) or 0
+    temp_min = day_data.get('temp_min', 0) or 0
+    temp_avg = (temp_max + temp_min) / 2
+    
+    # Warming above freezing increases risk
+    if temp_max > 0:
+        risk_score += 0.15
+    if temp_avg > 0:
+        risk_score += 0.1
+    
+    # Large temperature swings are dangerous
+    temp_range = temp_max - temp_min
+    if temp_range > 15:
+        risk_score += 0.1
+    
+    # New snow adds significant risk
+    snowfall = day_data.get('snowfall', 0) or 0
+    if snowfall > 30:  # Heavy snowfall (cm)
+        risk_score += 0.3
+    elif snowfall > 15:
+        risk_score += 0.2
+    elif snowfall > 5:
+        risk_score += 0.1
+    
+    # Rain on snow is very dangerous
+    precip = day_data.get('precipitation', 0) or 0
+    if precip > 10 and temp_avg > 0:
+        risk_score += 0.2
+    
+    # High winds cause loading
+    wind_max = day_data.get('wind_max', 0) or 0
+    wind_gust = day_data.get('wind_gust', 0) or 0
+    
+    if wind_gust > 60:  # Extreme gusts (km/h)
+        risk_score += 0.25
+    elif wind_gust > 40:
+        risk_score += 0.15
+    elif wind_max > 25:
+        risk_score += 0.1
+    
+    # High radiation causes surface warming
+    radiation = day_data.get('radiation', 0) or 0
+    if radiation > 20:  # MJ/m² (high for winter)
+        risk_score += 0.1
+    
+    return min(max(risk_score, 0.0), 1.0)
+
+
+def get_risk_level_from_score(score):
+    """Convert risk score to risk level string."""
+    if score >= 0.7:
+        return 'HIGH'
+    elif score >= 0.4:
+        return 'MODERATE'
+    else:
+        return 'LOW'
+
+
+def create_forecast_chart(forecast_data):
+    """Create a 7-day forecast chart using Streamlit native charts."""
+    if not forecast_data.get('available') or not forecast_data.get('daily'):
+        return None
+    
+    daily = forecast_data['daily']
+    
+    # Prepare data for chart
+    chart_data = pd.DataFrame({
+        'Day': [d['date_formatted'] for d in daily],
+        'Risk %': [d['risk_score'] * 100 for d in daily],
+        'Snowfall (cm)': [d.get('snowfall', 0) or 0 for d in daily],
+        'Temp Max (°C)': [d.get('temp_max', 0) or 0 for d in daily],
+        'Wind (km/h)': [d.get('wind_max', 0) or 0 for d in daily]
+    })
+    
+    return chart_data, daily
+
+
+# ============================================
 # STREAMLIT UI
 # ============================================
 
@@ -4310,6 +4466,79 @@ if analysis_mode == "📍 Single Point":
                 • Check for updated forecasts
             </div>
             """, unsafe_allow_html=True)
+        
+        # ============================================
+        # 7-DAY RISK FORECAST
+        # ============================================
+        st.markdown('<p class="section-header">7-Day Risk Forecast</p>', unsafe_allow_html=True)
+        
+        loc = results.get('location', st.session_state.location)
+        if loc:
+            with st.spinner("Loading forecast..."):
+                forecast = fetch_7day_forecast(loc['latitude'], loc['longitude'])
+            
+            if forecast.get('available') and forecast.get('daily'):
+                chart_result = create_forecast_chart(forecast)
+                
+                if chart_result:
+                    chart_data, daily = chart_result
+                    
+                    # Risk level cards for each day
+                    cols = st.columns(7)
+                    for i, day in enumerate(daily):
+                        with cols[i]:
+                            risk_score = day['risk_score']
+                            risk_level = day['risk_level']
+                            
+                            # Color based on risk
+                            if risk_level == 'HIGH':
+                                bg_color = '#fef2f2'
+                                border_color = '#dc2626'
+                                text_color = '#dc2626'
+                            elif risk_level == 'MODERATE':
+                                bg_color = '#fffbeb'
+                                border_color = '#f59e0b'
+                                text_color = '#d97706'
+                            else:
+                                bg_color = '#f0fdf4'
+                                border_color = '#10b981'
+                                text_color = '#059669'
+                            
+                            st.markdown(f"""
+                            <div style="background: {bg_color}; border: 2px solid {border_color}; 
+                                        border-radius: 8px; padding: 0.5rem; text-align: center; margin-bottom: 0.5rem;">
+                                <div style="font-size: 0.7rem; color: #6b7280; font-weight: 500;">{day['date_formatted']}</div>
+                                <div style="font-size: 1.1rem; font-weight: 700; color: {text_color};">{risk_score*100:.0f}%</div>
+                                <div style="font-size: 0.6rem; color: {text_color};">{risk_level}</div>
+                            </div>
+                            """, unsafe_allow_html=True)
+                    
+                    # Expandable details with chart
+                    with st.expander("View detailed forecast"):
+                        # Risk trend chart
+                        st.markdown("**Risk Trend**")
+                        risk_df = pd.DataFrame({
+                            'Day': [d['date_formatted'] for d in daily],
+                            'Risk': [d['risk_score'] * 100 for d in daily]
+                        })
+                        st.bar_chart(risk_df.set_index('Day'))
+                        
+                        # Weather details table
+                        st.markdown("**Weather Factors**")
+                        weather_df = pd.DataFrame({
+                            'Day': [d['date_formatted'] for d in daily],
+                            'Temp Max': [f"{d.get('temp_max', 0):.0f}°C" for d in daily],
+                            'Temp Min': [f"{d.get('temp_min', 0):.0f}°C" for d in daily],
+                            'Snow': [f"{d.get('snowfall', 0):.0f} cm" for d in daily],
+                            'Rain': [f"{d.get('precipitation', 0):.1f} mm" for d in daily],
+                            'Wind': [f"{d.get('wind_max', 0):.0f} km/h" for d in daily],
+                            'Gusts': [f"{d.get('wind_gust', 0):.0f} km/h" for d in daily]
+                        })
+                        st.dataframe(weather_df, hide_index=True, use_container_width=True)
+                        
+                        st.caption("Risk forecast based on temperature, snowfall, wind, and radiation predictions from Open-Meteo.")
+            else:
+                st.info("Forecast data not available for this location")
         
         # ============================================
         # WIND LOADING ANALYSIS DISPLAY (from session state)
