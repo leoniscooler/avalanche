@@ -4163,8 +4163,21 @@ else:
         st.session_state.map_clicked_lat = map_data['last_clicked']['lat']
         st.session_state.map_clicked_lon = map_data['last_clicked']['lng']
     
+    # Show selected location with refresh button
     if st.session_state.get('map_clicked_lat'):
-        st.success(f"Selected: {st.session_state.map_clicked_lat:.4f}°N, {st.session_state.map_clicked_lon:.4f}°E")
+        col_loc, col_refresh = st.columns([4, 1])
+        with col_loc:
+            st.success(f"📍 Selected: {st.session_state.map_clicked_lat:.4f}°N, {st.session_state.map_clicked_lon:.4f}°E")
+        with col_refresh:
+            if st.button("🔄 New Location", key="refresh_location", help="Clear selection and choose a new location"):
+                st.session_state.map_clicked_lat = None
+                st.session_state.map_clicked_lon = None
+                st.session_state.location = None
+                st.session_state.satellite_raw = None
+                st.session_state.env_data = None
+                st.session_state.assessment_results = None
+                st.session_state.wind_loading_results = None
+                st.rerun()
     
     st.markdown("")  # Spacing
     
