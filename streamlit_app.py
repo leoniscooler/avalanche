@@ -4093,35 +4093,123 @@ else:
     # Location search bar (like Google Maps)
     search_query = st.text_input(
         "🔍 Search for a location",
-        placeholder="Enter city, mountain, address, or coordinates...",
+        placeholder="Enter city, mountain, ski resort, address...",
         key="location_search",
-        help="Search for any location by name, address, or coordinates (e.g., 'Aspen, Colorado' or 'Mount Rainier')"
+        help="Search for any location (e.g., 'Kirkwood Ski Resort', 'Aspen CO', 'Mt Rainier')"
     )
     
     # Search for location when user enters a query
     if search_query:
         @st.cache_data(ttl=3600)
-        def search_location(query):
-            """Search for a location using Nominatim (OpenStreetMap) geocoding API"""
-            try:
-                # Use Nominatim API for geocoding
-                url = "https://nominatim.openstreetmap.org/search"
-                params = {
-                    'q': query,
-                    'format': 'json',
-                    'limit': 5,
-                    'addressdetails': 1
-                }
-                headers = {'User-Agent': 'AvalancheRiskAssessment/1.0'}
-                response = requests.get(url, params=params, headers=headers, timeout=10)
-                
-                if response.status_code == 200:
-                    return response.json()
-            except Exception as e:
-                st.error(f"Search error: {e}")
-            return []
+        def search_location_enhanced(query):
+            """Enhanced location search with fuzzy matching, typo tolerance, and multiple strategies"""
+            all_results = []
+            seen_coords = set()
+            headers = {'User-Agent': 'AvalancheRiskAssessment/1.0'}
+            
+            # Normalize query
+            query_lower = query.lower().strip()
+            
+            # Common abbreviations and expansions
+            abbreviations = {
+                'mt': 'mount', 'mt.': 'mount',
+                'mtn': 'mountain', 'mtn.': 'mountain',
+                'pk': 'peak', 'pk.': 'peak',
+                'ca': 'california', 'co': 'colorado', 'ut': 'utah', 'wy': 'wyoming',
+                'wa': 'washington', 'or': 'oregon', 'nv': 'nevada', 'az': 'arizona',
+                'nm': 'new mexico', 'id': 'idaho', 'mt': 'montana', 'ak': 'alaska',
+                'vt': 'vermont', 'nh': 'new hampshire', 'me': 'maine', 'ny': 'new york',
+                'st': 'saint', 'st.': 'saint',
+                'n': 'north', 's': 'south', 'e': 'east', 'w': 'west',
+                'natl': 'national', 'nat': 'national',
+                'ski': 'ski resort', 'resort': 'ski resort',
+            }
+            
+            # Generate query variations
+            query_variations = [query]
+            
+            # Add version with expanded abbreviations
+            expanded_query = query_lower
+            for abbr, full in abbreviations.items():
+                # Match whole words only
+                import re
+                expanded_query = re.sub(r'\b' + re.escape(abbr) + r'\b', full, expanded_query, flags=re.IGNORECASE)
+            if expanded_query != query_lower:
+                query_variations.append(expanded_query)
+            
+            # Add "ski resort" suffix if query looks like a ski area
+            ski_keywords = ['ski', 'resort', 'mountain', 'basin', 'valley', 'peak', 'slopes']
+            if not any(kw in query_lower for kw in ['ski resort', 'ski area']):
+                if any(kw in query_lower for kw in ski_keywords) or query_lower.endswith(('wood', 'bowl', 'ridge', 'creek')):
+                    query_variations.append(query + ' ski resort')
+                    query_variations.append(query + ' ski area')
+            
+            # Add common word reorderings
+            words = query.split()
+            if len(words) >= 2:
+                # Try reversed order for two-word queries
+                query_variations.append(' '.join(reversed(words)))
+                # Try with "ski resort" or "mountain" appended
+                query_variations.append(query + ' mountain')
+            
+            def fetch_results(q, search_type='standard'):
+                """Fetch results for a single query"""
+                try:
+                    url = "https://nominatim.openstreetmap.org/search"
+                    params = {
+                        'q': q,
+                        'format': 'json',
+                        'limit': 8,
+                        'addressdetails': 1,
+                        'extratags': 1,
+                        'namedetails': 1
+                    }
+                    
+                    # For ski resorts, add specific amenity search
+                    if 'ski' in q.lower():
+                        params['amenity'] = 'ski'
+                    
+                    response = requests.get(url, params=params, headers=headers, timeout=8)
+                    if response.status_code == 200:
+                        return response.json()
+                except:
+                    pass
+                return []
+            
+            # Try each query variation
+            for variation in query_variations[:6]:  # Limit to prevent too many API calls
+                results = fetch_results(variation)
+                for r in results:
+                    # Create unique key from coordinates (rounded to avoid near-duplicates)
+                    coord_key = (round(float(r.get('lat', 0)), 4), round(float(r.get('lon', 0)), 4))
+                    if coord_key not in seen_coords:
+                        seen_coords.add(coord_key)
+                        # Add relevance score based on query match
+                        name = r.get('display_name', '').lower()
+                        r['_relevance'] = sum(1 for word in query_lower.split() if word in name)
+                        all_results.append(r)
+            
+            # If still no results, try a more aggressive fuzzy search
+            if not all_results:
+                # Try removing common words and searching
+                stop_words = {'the', 'a', 'an', 'of', 'at', 'in', 'on', 'by'}
+                filtered_words = [w for w in query.split() if w.lower() not in stop_words]
+                if filtered_words:
+                    fuzzy_query = ' '.join(filtered_words)
+                    results = fetch_results(fuzzy_query)
+                    for r in results:
+                        coord_key = (round(float(r.get('lat', 0)), 4), round(float(r.get('lon', 0)), 4))
+                        if coord_key not in seen_coords:
+                            seen_coords.add(coord_key)
+                            r['_relevance'] = 0
+                            all_results.append(r)
+            
+            # Sort by relevance score (higher is better), then by importance
+            all_results.sort(key=lambda x: (x.get('_relevance', 0), float(x.get('importance', 0))), reverse=True)
+            
+            return all_results[:8]  # Return top 8 results
         
-        results = search_location(search_query)
+        results = search_location_enhanced(search_query)
         
         if results:
             # Show search results
