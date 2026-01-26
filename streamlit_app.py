@@ -4090,7 +4090,7 @@ else:
     # Location selection
     st.markdown('<p class="section-header">Location</p>', unsafe_allow_html=True)
 
-    # Check for geolocation coordinates in URL query params (auto-submitted by JavaScript)
+    # Check for geolocation coordinates in URL query params
     query_params = st.query_params
     if 'geo_lat' in query_params and 'geo_lon' in query_params:
         try:
@@ -4098,40 +4098,65 @@ else:
             geo_lon = float(query_params['geo_lon'])
             
             if -90 <= geo_lat <= 90 and -180 <= geo_lon <= 180:
-                # Only update if different from current location
-                if (st.session_state.get('map_clicked_lat') != geo_lat or 
-                    st.session_state.get('map_clicked_lon') != geo_lon):
-                    
-                    st.session_state.map_clicked_lat = geo_lat
-                    st.session_state.map_clicked_lon = geo_lon
-                    
-                    # Create location from coordinates
-                    st.session_state.location = create_location_from_coords(geo_lat, geo_lon)
-                    st.session_state.location['elevation'] = get_elevation(geo_lat, geo_lon)
-                    st.session_state.location['source'] = 'GPS/Browser Geolocation'
-                    
-                    # Clear old data
-                    st.session_state.satellite_raw = None
-                    st.session_state.env_data = None
-                    st.session_state.assessment_results = None
-                    st.session_state.wind_loading_results = None
-                    
-                    # Clear the query params and rerun
-                    st.query_params.clear()
-                    st.success(f"✅ Location automatically detected: {geo_lat:.4f}°, {geo_lon:.4f}°")
-                    st.rerun()
+                st.session_state.map_clicked_lat = geo_lat
+                st.session_state.map_clicked_lon = geo_lon
+                
+                # Create location from coordinates
+                st.session_state.location = create_location_from_coords(geo_lat, geo_lon)
+                st.session_state.location['elevation'] = get_elevation(geo_lat, geo_lon)
+                st.session_state.location['source'] = 'GPS/Browser Geolocation'
+                
+                # Clear old data
+                st.session_state.satellite_raw = None
+                st.session_state.env_data = None
+                st.session_state.assessment_results = None
+                st.session_state.wind_loading_results = None
+                
+                # Clear the query params
+                st.query_params.clear()
+                st.success(f"✅ Location detected: {geo_lat:.4f}°, {geo_lon:.4f}°")
         except (ValueError, TypeError):
             pass
     
     # Auto-detect location button
     detect_btn = st.button("📍 Auto-Detect My Location", type="primary")
     
-    # JavaScript for HTML5 Geolocation - auto-redirects with coordinates in URL
+    # JavaScript for HTML5 Geolocation
     if detect_btn:
+        # Use a different approach - show coordinates and provide a direct link
         geolocation_js = """
+        <div id="geo-container" style="padding: 15px; background: linear-gradient(135deg, #e0f2fe 0%, #f0f9ff 100%); border-radius: 12px; margin: 10px 0; border: 1px solid #bae6fd;">
+            <div id="geo-loading" style="display: flex; align-items: center; gap: 12px;">
+                <div style="width: 24px; height: 24px; border: 3px solid #0ea5e9; border-top-color: transparent; border-radius: 50%; animation: spin 1s linear infinite;"></div>
+                <span style="color: #0369a1; font-weight: 500;">📍 Requesting your location...</span>
+            </div>
+            <div id="geo-success" style="display: none;">
+                <div style="color: #059669; font-weight: 600; font-size: 1.1em; margin-bottom: 10px;">✅ Location Found!</div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 15px;">
+                    <div style="background: white; padding: 10px; border-radius: 8px; text-align: center;">
+                        <div style="font-size: 0.75em; color: #64748b; text-transform: uppercase;">Latitude</div>
+                        <div id="lat-display" style="font-size: 1.2em; font-weight: 700; color: #0f172a;"></div>
+                    </div>
+                    <div style="background: white; padding: 10px; border-radius: 8px; text-align: center;">
+                        <div style="font-size: 0.75em; color: #64748b; text-transform: uppercase;">Longitude</div>
+                        <div id="lon-display" style="font-size: 1.2em; font-weight: 700; color: #0f172a;"></div>
+                    </div>
+                </div>
+                <a id="apply-link" href="#" style="display: block; background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; text-align: center; padding: 12px 20px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 1em;">
+                    🗺️ Apply to Map
+                </a>
+            </div>
+            <div id="geo-error" style="display: none; color: #dc2626; font-weight: 500;"></div>
+        </div>
+        <style>@keyframes spin { to { transform: rotate(360deg); } }</style>
         <script>
         (function() {
-            const statusEl = document.getElementById('geo-status-text');
+            const loadingEl = document.getElementById('geo-loading');
+            const successEl = document.getElementById('geo-success');
+            const errorEl = document.getElementById('geo-error');
+            const latDisplay = document.getElementById('lat-display');
+            const lonDisplay = document.getElementById('lon-display');
+            const applyLink = document.getElementById('apply-link');
             
             if (navigator.geolocation) {
                 navigator.geolocation.getCurrentPosition(
@@ -4139,52 +4164,55 @@ else:
                         const lat = position.coords.latitude.toFixed(6);
                         const lon = position.coords.longitude.toFixed(6);
                         
-                        statusEl.innerHTML = '✅ Location found! Updating map...';
-                        statusEl.style.color = '#059669';
+                        loadingEl.style.display = 'none';
+                        successEl.style.display = 'block';
+                        latDisplay.textContent = lat + '°';
+                        lonDisplay.textContent = lon + '°';
                         
-                        // Redirect with coordinates in URL - Streamlit will pick these up
-                        const currentUrl = new URL(window.parent.location.href);
-                        currentUrl.searchParams.set('geo_lat', lat);
-                        currentUrl.searchParams.set('geo_lon', lon);
+                        // Build the URL with coordinates
+                        const baseUrl = window.parent.location.origin + window.parent.location.pathname;
+                        const newUrl = baseUrl + '?geo_lat=' + lat + '&geo_lon=' + lon;
+                        applyLink.href = newUrl;
                         
-                        // Small delay for user to see success message
-                        setTimeout(function() {
-                            window.parent.location.href = currentUrl.toString();
-                        }, 500);
+                        // Try auto-redirect (works in some browsers)
+                        try {
+                            window.parent.location.href = newUrl;
+                        } catch(e) {
+                            // If blocked, user can click the link
+                            console.log('Auto-redirect blocked, user can click link');
+                        }
                     },
                     function(error) {
+                        loadingEl.style.display = 'none';
+                        errorEl.style.display = 'block';
+                        
                         let msg = '❌ ';
                         switch(error.code) {
                             case error.PERMISSION_DENIED: 
-                                msg += 'Permission denied. Please allow location access in your browser.'; 
+                                msg += 'Permission denied. Please allow location access in your browser settings and try again.'; 
                                 break;
                             case error.POSITION_UNAVAILABLE: 
-                                msg += 'Position unavailable. Please click on the map instead.'; 
+                                msg += 'Position unavailable. Please click on the map below instead.'; 
                                 break;
                             case error.TIMEOUT: 
-                                msg += 'Request timed out. Please try again.'; 
+                                msg += 'Request timed out. Please try again or click on the map.'; 
                                 break;
                             default: 
-                                msg += 'Could not get location. Please click on the map.';
+                                msg += 'Could not get location. Please click on the map below.';
                         }
-                        statusEl.innerHTML = msg;
-                        statusEl.style.color = '#dc2626';
+                        errorEl.innerHTML = msg;
                     },
-                    { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+                    { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
                 );
             } else {
-                statusEl.innerHTML = '❌ Geolocation not supported. Please click on the map.';
-                statusEl.style.color = '#dc2626';
+                loadingEl.style.display = 'none';
+                errorEl.style.display = 'block';
+                errorEl.innerHTML = '❌ Geolocation not supported by your browser. Please click on the map below.';
             }
         })();
         </script>
-        <div style="padding: 12px; background: linear-gradient(135deg, #e0f2fe 0%, #f0f9ff 100%); border-radius: 10px; margin: 10px 0; border: 1px solid #bae6fd; display: flex; align-items: center; gap: 12px;">
-            <div style="width: 24px; height: 24px; border: 3px solid #0ea5e9; border-top-color: transparent; border-radius: 50%; animation: spin 1s linear infinite;"></div>
-            <span id="geo-status-text" style="color: #0369a1; font-weight: 500;">📍 Requesting your location...</span>
-        </div>
-        <style>@keyframes spin { to { transform: rotate(360deg); } }</style>
         """
-        st.components.v1.html(geolocation_js, height=70)
+        st.components.v1.html(geolocation_js, height=200)
     
     st.markdown("")
     st.caption("Or click anywhere on the map to set your location:")
