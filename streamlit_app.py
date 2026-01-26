@@ -3701,9 +3701,9 @@ else:
     # Location selection
     st.markdown('<p class="section-header">Location</p>', unsafe_allow_html=True)
 
-    # Auto-detect location button
-    col_auto1, col_auto2, col_auto3 = st.columns([1, 2, 1])
-    with col_auto2:
+    # Auto-detect location button (left-aligned)
+    col_auto1, col_auto2 = st.columns([1, 3])
+    with col_auto1:
         if st.button("Auto-detect my location", type="secondary", use_container_width=True):
             with st.spinner("Detecting location..."):
                 detected_ip = get_ip_address()
