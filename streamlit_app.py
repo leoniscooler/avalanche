@@ -4090,31 +4090,63 @@ else:
     # Location selection
     st.markdown('<p class="section-header">Location</p>', unsafe_allow_html=True)
 
-    # Auto-detect location button (left-aligned)
+    # Use browser's Geolocation API for accurate location (not IP-based)
+    # This uses streamlit-js-eval for browser geolocation
+    
     col_auto1, col_auto2 = st.columns([1, 3])
     with col_auto1:
-        if st.button("Auto-detect my location", type="secondary", use_container_width=True):
-            with st.spinner("Detecting location..."):
-                detected_ip = get_ip_address()
-                if detected_ip:
-                    st.session_state.user_ip = detected_ip
-                    location_data = get_user_location(detected_ip)
-                    if location_data:
-                        st.session_state.location = location_data
-                        st.session_state.map_clicked_lat = location_data['latitude']
-                        st.session_state.map_clicked_lon = location_data['longitude']
-                        st.session_state.location['elevation'] = get_elevation(
-                            location_data['latitude'], 
-                            location_data['longitude']
-                        )
-                        # Clear old data
-                        st.session_state.satellite_raw = None
-                        st.session_state.env_data = None
-                        st.session_state.assessment_results = None
-                        st.session_state.wind_loading_results = None
-                        st.rerun()
-                else:
-                    st.error("Could not detect location. Please select on the map.")
+        detect_clicked = st.button("🎯 Detect My Location", type="secondary", use_container_width=True,
+                                   help="Uses your browser's GPS for accurate location")
+    
+    if detect_clicked:
+        # Use JavaScript to get browser geolocation
+        st.markdown("""
+        <div id="geo-status" style="padding: 10px; background: #f0f9ff; border-radius: 8px; margin: 10px 0;">
+            <span id="geo-text">📍 Requesting location access...</span>
+        </div>
+        <script>
+        if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(
+                function(position) {
+                    const lat = position.coords.latitude.toFixed(6);
+                    const lon = position.coords.longitude.toFixed(6);
+                    document.getElementById('geo-text').innerHTML = 
+                        '✅ Location found: ' + lat + '°, ' + lon + '°<br>' +
+                        '<small>Copy these coordinates and click on that location on the map below, or use the manual entry.</small>';
+                    
+                    // Try to store in session (this is a workaround)
+                    window.DETECTED_LAT = position.coords.latitude;
+                    window.DETECTED_LON = position.coords.longitude;
+                    
+                    // Alert with coordinates for easy copying
+                    alert('Your location:\\nLatitude: ' + lat + '\\nLongitude: ' + lon + '\\n\\nClick OK, then click on this location on the map below.');
+                },
+                function(error) {
+                    let msg = '❌ ';
+                    switch(error.code) {
+                        case error.PERMISSION_DENIED:
+                            msg += 'Permission denied. Please allow location access and try again.';
+                            break;
+                        case error.POSITION_UNAVAILABLE:
+                            msg += 'Location unavailable.';
+                            break;
+                        case error.TIMEOUT:
+                            msg += 'Request timed out.';
+                            break;
+                        default:
+                            msg += 'Unknown error.';
+                    }
+                    document.getElementById('geo-text').innerHTML = msg + ' Please select your location on the map below.';
+                },
+                {enableHighAccuracy: true, timeout: 10000, maximumAge: 0}
+            );
+        } else {
+            document.getElementById('geo-text').innerHTML = '❌ Geolocation not supported. Please select on map.';
+        }
+        </script>
+        """, unsafe_allow_html=True)
+        
+        st.info("👆 A popup should appear with your exact coordinates. You can then click that location on the map, or enter the coordinates in 'Adjust Location' below.")
     
     st.markdown("")
     st.markdown("Or click anywhere on the map to set your location:")
