@@ -4090,13 +4090,118 @@ else:
     # Location selection
     st.markdown('<p class="section-header">Location</p>', unsafe_allow_html=True)
 
-    # Location search bar (like Google Maps)
-    search_query = st.text_input(
-        "🔍 Search for a location",
-        placeholder="Enter city, mountain, ski resort, address...",
-        key="location_search",
-        help="Search for any location (e.g., 'Kirkwood Ski Resort', 'Aspen CO', 'Mt Rainier')"
-    )
+    # Search bar and detect location button side by side
+    col_search, col_detect = st.columns([3, 1])
+    
+    with col_search:
+        # Location search bar (like Google Maps)
+        search_query = st.text_input(
+            "🔍 Search for a location",
+            placeholder="Enter city, mountain, ski resort, address...",
+            key="location_search",
+            help="Search for any location (e.g., 'Kirkwood Ski Resort', 'Aspen CO', 'Mt Rainier')",
+            label_visibility="collapsed"
+        )
+    
+    with col_detect:
+        detect_btn = st.button("📍 Detect My Location", type="secondary", use_container_width=True)
+    
+    # HTML5 Geolocation API implementation
+    if detect_btn:
+        # Inject JavaScript for browser geolocation
+        geolocation_html = """
+        <div id="geo-container" style="padding: 12px; background: linear-gradient(135deg, #e0f2fe 0%, #f0f9ff 100%); border-radius: 10px; margin: 10px 0; border: 1px solid #bae6fd;">
+            <div id="geo-status" style="display: flex; align-items: center; gap: 10px;">
+                <div id="geo-spinner" style="width: 20px; height: 20px; border: 3px solid #0ea5e9; border-top-color: transparent; border-radius: 50%; animation: spin 1s linear infinite;"></div>
+                <span id="geo-text" style="color: #0369a1; font-weight: 500;">Requesting location access...</span>
+            </div>
+            <div id="geo-result" style="display: none; margin-top: 10px;"></div>
+        </div>
+        
+        <style>
+            @keyframes spin { to { transform: rotate(360deg); } }
+        </style>
+        
+        <script>
+        (function() {
+            const statusDiv = document.getElementById('geo-status');
+            const resultDiv = document.getElementById('geo-result');
+            const spinner = document.getElementById('geo-spinner');
+            const textEl = document.getElementById('geo-text');
+            
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                    function(position) {
+                        const lat = position.coords.latitude;
+                        const lon = position.coords.longitude;
+                        const accuracy = position.coords.accuracy;
+                        
+                        spinner.style.display = 'none';
+                        textEl.innerHTML = '✅ <strong>Location detected!</strong>';
+                        textEl.style.color = '#059669';
+                        
+                        resultDiv.style.display = 'block';
+                        resultDiv.innerHTML = `
+                            <div style="background: white; padding: 12px; border-radius: 8px; margin-top: 8px;">
+                                <div style="font-size: 1.1em; font-weight: 600; color: #1e293b; margin-bottom: 8px;">
+                                    📍 Your Coordinates
+                                </div>
+                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px;">
+                                    <div style="background: #f1f5f9; padding: 8px; border-radius: 6px;">
+                                        <div style="font-size: 0.75em; color: #64748b; text-transform: uppercase;">Latitude</div>
+                                        <div style="font-size: 1.1em; font-weight: 600; color: #0f172a;">${lat.toFixed(6)}°</div>
+                                    </div>
+                                    <div style="background: #f1f5f9; padding: 8px; border-radius: 6px;">
+                                        <div style="font-size: 0.75em; color: #64748b; text-transform: uppercase;">Longitude</div>
+                                        <div style="font-size: 1.1em; font-weight: 600; color: #0f172a;">${lon.toFixed(6)}°</div>
+                                    </div>
+                                </div>
+                                <div style="font-size: 0.85em; color: #64748b; margin-bottom: 12px;">
+                                    Accuracy: ~${Math.round(accuracy)} meters
+                                </div>
+                                <div style="background: #fef3c7; padding: 10px; border-radius: 6px; font-size: 0.9em; color: #92400e;">
+                                    <strong>👆 Copy these coordinates</strong> and paste them in the <strong>"Adjust location"</strong> section below, then click "Update location".
+                                </div>
+                            </div>
+                        `;
+                        
+                        // Store in window for potential access
+                        window.DETECTED_COORDS = { lat: lat, lon: lon, accuracy: accuracy };
+                    },
+                    function(error) {
+                        spinner.style.display = 'none';
+                        let errorMsg = '';
+                        switch(error.code) {
+                            case error.PERMISSION_DENIED:
+                                errorMsg = '❌ <strong>Permission denied.</strong> Please allow location access in your browser settings and try again.';
+                                break;
+                            case error.POSITION_UNAVAILABLE:
+                                errorMsg = '❌ <strong>Location unavailable.</strong> Your device could not determine your position.';
+                                break;
+                            case error.TIMEOUT:
+                                errorMsg = '❌ <strong>Request timed out.</strong> Please try again.';
+                                break;
+                            default:
+                                errorMsg = '❌ <strong>Unknown error.</strong> Please use the search bar or click on the map instead.';
+                        }
+                        textEl.innerHTML = errorMsg;
+                        textEl.style.color = '#dc2626';
+                    },
+                    {
+                        enableHighAccuracy: true,
+                        timeout: 15000,
+                        maximumAge: 0
+                    }
+                );
+            } else {
+                spinner.style.display = 'none';
+                textEl.innerHTML = '❌ <strong>Geolocation not supported</strong> by your browser. Please use the search bar or click on the map.';
+                textEl.style.color = '#dc2626';
+            }
+        })();
+        </script>
+        """
+        st.components.v1.html(geolocation_html, height=280)
     
     # Search for location when user enters a query
     if search_query:
