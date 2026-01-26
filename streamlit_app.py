@@ -3116,14 +3116,6 @@ st.markdown("""
         font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
     }
     
-    /* Center main content */
-    .main .block-container {
-        max-width: 900px;
-        margin: 0 auto;
-        padding-left: 2rem;
-        padding-right: 2rem;
-    }
-    
     /* Header styling */
     .app-header {
         padding: 1.5rem 0 1rem 0;
@@ -3709,29 +3701,31 @@ else:
     # Location selection
     st.markdown('<p class="section-header">Location</p>', unsafe_allow_html=True)
 
-    # Auto-detect location button
-    if st.button("Auto-detect my location", type="secondary"):
-        with st.spinner("Detecting location..."):
-            detected_ip = get_ip_address()
-            if detected_ip:
-                st.session_state.user_ip = detected_ip
-                location_data = get_user_location(detected_ip)
-                if location_data:
-                    st.session_state.location = location_data
-                    st.session_state.map_clicked_lat = location_data['latitude']
-                    st.session_state.map_clicked_lon = location_data['longitude']
-                    st.session_state.location['elevation'] = get_elevation(
-                        location_data['latitude'], 
-                        location_data['longitude']
-                    )
-                    # Clear old data
-                    st.session_state.satellite_raw = None
-                    st.session_state.env_data = None
-                    st.session_state.assessment_results = None
-                    st.session_state.wind_loading_results = None
-                    st.rerun()
-            else:
-                st.error("Could not detect location. Please select on the map.")
+    # Auto-detect location button (left-aligned)
+    col_auto1, col_auto2 = st.columns([1, 3])
+    with col_auto1:
+        if st.button("Auto-detect my location", type="secondary", use_container_width=True):
+            with st.spinner("Detecting location..."):
+                detected_ip = get_ip_address()
+                if detected_ip:
+                    st.session_state.user_ip = detected_ip
+                    location_data = get_user_location(detected_ip)
+                    if location_data:
+                        st.session_state.location = location_data
+                        st.session_state.map_clicked_lat = location_data['latitude']
+                        st.session_state.map_clicked_lon = location_data['longitude']
+                        st.session_state.location['elevation'] = get_elevation(
+                            location_data['latitude'], 
+                            location_data['longitude']
+                        )
+                        # Clear old data
+                        st.session_state.satellite_raw = None
+                        st.session_state.env_data = None
+                        st.session_state.assessment_results = None
+                        st.session_state.wind_loading_results = None
+                        st.rerun()
+                else:
+                    st.error("Could not detect location. Please select on the map.")
     
     st.markdown("")
     st.markdown("Or click anywhere on the map to set your location:")
@@ -3942,12 +3936,15 @@ def get_input_value(key, default=0.0, min_val=None, max_val=None):
 if analysis_mode == "📍 Single Point":
     st.markdown('<p class="section-header">Risk Assessment</p>', unsafe_allow_html=True)
 
-    # Check if location is set
-    if st.session_state.location:
-        predict_button = st.button("Run Assessment", type="primary")
-    else:
-        st.warning("Please select a location on the map first")
-        predict_button = False
+    col1, col2 = st.columns([1, 3])
+
+    with col1:
+        # Check if location is set
+        if st.session_state.location:
+            predict_button = st.button("Run Assessment", type="primary", use_container_width=True)
+        else:
+            st.warning("Please select a location on the map first")
+            predict_button = False
 
     if predict_button:
         # Always fetch fresh satellite data when Run Assessment is clicked
@@ -4251,17 +4248,20 @@ if analysis_mode == "📍 Single Point":
         
         st.markdown("")  # Spacing
         
-        st.markdown(f"""
-        <div class="risk-card {results['risk_class']}">
-            <div class="risk-label">Avalanche Risk</div>
-            <div class="risk-level">{results['risk_level']}</div>
-            <div class="risk-confidence">{results['avalanche_probability']*100:.0f}% probability</div>
-        </div>
-        """, unsafe_allow_html=True)
+        col1, col2 = st.columns([1, 2])
         
-        # Show model confidence separately
-        confidence_label = "High" if results['model_confidence'] >= 0.7 else "Medium" if results['model_confidence'] >= 0.4 else "Low"
-        st.caption(f"{results['risk_message']} • Model confidence: {confidence_label}")
+        with col1:
+            st.markdown(f"""
+            <div class="risk-card {results['risk_class']}">
+                <div class="risk-label">Avalanche Risk</div>
+                <div class="risk-level">{results['risk_level']}</div>
+                <div class="risk-confidence">{results['avalanche_probability']*100:.0f}% probability</div>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            # Show model confidence separately
+            confidence_label = "High" if results['model_confidence'] >= 0.7 else "Medium" if results['model_confidence'] >= 0.4 else "Low"
+            st.caption(f"{results['risk_message']} • Model confidence: {confidence_label}")
         
         # Key factors
         st.markdown('<p class="section-header">Contributing Factors</p>', unsafe_allow_html=True)
