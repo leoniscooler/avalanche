@@ -4090,63 +4090,87 @@ else:
     # Location selection
     st.markdown('<p class="section-header">Location</p>', unsafe_allow_html=True)
 
-    # Use browser's Geolocation API for accurate location (not IP-based)
-    # This uses streamlit-js-eval for browser geolocation
+    # Location search bar (like Google Maps)
+    search_query = st.text_input(
+        "🔍 Search for a location",
+        placeholder="Enter city, mountain, address, or coordinates...",
+        key="location_search",
+        help="Search for any location by name, address, or coordinates (e.g., 'Aspen, Colorado' or 'Mount Rainier')"
+    )
     
-    col_auto1, col_auto2 = st.columns([1, 3])
-    with col_auto1:
-        detect_clicked = st.button("🎯 Detect My Location", type="secondary", use_container_width=True,
-                                   help="Uses your browser's GPS for accurate location")
-    
-    if detect_clicked:
-        # Use JavaScript to get browser geolocation
-        st.markdown("""
-        <div id="geo-status" style="padding: 10px; background: #f0f9ff; border-radius: 8px; margin: 10px 0;">
-            <span id="geo-text">📍 Requesting location access...</span>
-        </div>
-        <script>
-        if (navigator.geolocation) {
-            navigator.geolocation.getCurrentPosition(
-                function(position) {
-                    const lat = position.coords.latitude.toFixed(6);
-                    const lon = position.coords.longitude.toFixed(6);
-                    document.getElementById('geo-text').innerHTML = 
-                        '✅ Location found: ' + lat + '°, ' + lon + '°<br>' +
-                        '<small>Copy these coordinates and click on that location on the map below, or use the manual entry.</small>';
-                    
-                    // Try to store in session (this is a workaround)
-                    window.DETECTED_LAT = position.coords.latitude;
-                    window.DETECTED_LON = position.coords.longitude;
-                    
-                    // Alert with coordinates for easy copying
-                    alert('Your location:\\nLatitude: ' + lat + '\\nLongitude: ' + lon + '\\n\\nClick OK, then click on this location on the map below.');
-                },
-                function(error) {
-                    let msg = '❌ ';
-                    switch(error.code) {
-                        case error.PERMISSION_DENIED:
-                            msg += 'Permission denied. Please allow location access and try again.';
-                            break;
-                        case error.POSITION_UNAVAILABLE:
-                            msg += 'Location unavailable.';
-                            break;
-                        case error.TIMEOUT:
-                            msg += 'Request timed out.';
-                            break;
-                        default:
-                            msg += 'Unknown error.';
-                    }
-                    document.getElementById('geo-text').innerHTML = msg + ' Please select your location on the map below.';
-                },
-                {enableHighAccuracy: true, timeout: 10000, maximumAge: 0}
-            );
-        } else {
-            document.getElementById('geo-text').innerHTML = '❌ Geolocation not supported. Please select on map.';
-        }
-        </script>
-        """, unsafe_allow_html=True)
+    # Search for location when user enters a query
+    if search_query:
+        @st.cache_data(ttl=3600)
+        def search_location(query):
+            """Search for a location using Nominatim (OpenStreetMap) geocoding API"""
+            try:
+                # Use Nominatim API for geocoding
+                url = "https://nominatim.openstreetmap.org/search"
+                params = {
+                    'q': query,
+                    'format': 'json',
+                    'limit': 5,
+                    'addressdetails': 1
+                }
+                headers = {'User-Agent': 'AvalancheRiskAssessment/1.0'}
+                response = requests.get(url, params=params, headers=headers, timeout=10)
+                
+                if response.status_code == 200:
+                    return response.json()
+            except Exception as e:
+                st.error(f"Search error: {e}")
+            return []
         
-        st.info("👆 A popup should appear with your exact coordinates. You can then click that location on the map, or enter the coordinates in 'Adjust Location' below.")
+        results = search_location(search_query)
+        
+        if results:
+            # Show search results
+            st.markdown("**Search Results:**")
+            
+            for i, result in enumerate(results):
+                display_name = result.get('display_name', 'Unknown location')
+                lat = float(result.get('lat', 0))
+                lon = float(result.get('lon', 0))
+                
+                # Truncate long names
+                if len(display_name) > 80:
+                    display_name = display_name[:77] + "..."
+                
+                col_result, col_btn = st.columns([4, 1])
+                with col_result:
+                    st.caption(f"📍 {display_name}")
+                with col_btn:
+                    if st.button("Select", key=f"search_result_{i}", type="primary"):
+                        st.session_state.map_clicked_lat = lat
+                        st.session_state.map_clicked_lon = lon
+                        
+                        # Get address details
+                        addr = result.get('address', {})
+                        city = addr.get('city') or addr.get('town') or addr.get('village') or addr.get('hamlet') or addr.get('municipality') or 'Unknown'
+                        region = addr.get('state') or addr.get('region') or addr.get('county') or 'Unknown'
+                        country = addr.get('country', 'Unknown')
+                        
+                        st.session_state.location = {
+                            'latitude': lat,
+                            'longitude': lon,
+                            'city': city,
+                            'region': region,
+                            'country': country,
+                            'display_name': result.get('display_name', ''),
+                            'elevation': get_elevation(lat, lon),
+                            'source': 'Location Search'
+                        }
+                        
+                        # Clear old data
+                        st.session_state.satellite_raw = None
+                        st.session_state.env_data = None
+                        st.session_state.assessment_results = None
+                        st.session_state.wind_loading_results = None
+                        st.rerun()
+            
+            st.markdown("---")
+        else:
+            st.warning("No results found. Try a different search term or click on the map below.")
     
     st.markdown("")
     st.markdown("Or click anywhere on the map to set your location:")
