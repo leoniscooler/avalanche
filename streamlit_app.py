@@ -4122,13 +4122,13 @@ else:
                     st.session_state.location['elevation'] = get_elevation(lat, lon)
                     st.session_state.location['source'] = 'GPS/Browser Geolocation'
                     
-                    # Clear old data
+                    # Clear old data and trigger assessment
                     st.session_state.satellite_raw = None
                     st.session_state.env_data = None
                     st.session_state.assessment_results = None
                     st.session_state.wind_loading_results = None
+                    st.session_state.run_assessment = True
                     
-                    st.success(f"✅ Location detected and set: {lat:.4f}°, {lon:.4f}°")
                     st.rerun()
         except (ValueError, IndexError):
             pass
@@ -4266,8 +4266,9 @@ else:
                 st.session_state.map_clicked_lat, 
                 st.session_state.map_clicked_lon
             )
-            # Clear old data when location changes
+            # Clear old data when location changes and trigger assessment
             st.session_state.satellite_raw = None
+            st.session_state.run_assessment = True
             st.session_state.env_data = None
             st.session_state.assessment_results = None
             st.session_state.wind_loading_results = None
@@ -4319,13 +4320,13 @@ else:
                     st.session_state.location['region'] = reverse_geo.get('region', 'Unknown')
                     st.session_state.location['country'] = reverse_geo.get('country', 'Unknown')
                 
-                # Clear cached data so it will be fetched on next assessment
+                # Clear cached data and trigger assessment
                 st.session_state.satellite_raw = None
                 st.session_state.env_data = None
                 st.session_state.assessment_results = None
                 st.session_state.wind_loading_results = None
+                st.session_state.run_assessment = True
                 
-                st.success("Location updated! Click 'Run Assessment' to analyze this location.")
                 st.rerun()
     
     # Display satellite data status (compact version)
@@ -4425,18 +4426,23 @@ def get_input_value(key, default=0.0, min_val=None, max_val=None):
 # Prediction section (only for single point mode)
 if analysis_mode == "📍 Single Point":
     st.markdown('<p class="section-header">Risk Assessment</p>', unsafe_allow_html=True)
+    
+    # Initialize run_assessment flag if not exists
+    if 'run_assessment' not in st.session_state:
+        st.session_state.run_assessment = False
+    
+    # Show instruction if no location selected yet
+    if not st.session_state.location:
+        st.info("👆 Click on the map or use Auto-Detect to select a location. Assessment will run automatically.")
+    
+    # Auto-run assessment when location is set and flag is True
+    should_run_assessment = st.session_state.location and st.session_state.run_assessment
+    
+    # Reset the flag
+    if st.session_state.run_assessment:
+        st.session_state.run_assessment = False
 
-    col1, col2 = st.columns([1, 3])
-
-    with col1:
-        # Check if location is set
-        if st.session_state.location:
-            predict_button = st.button("Run Assessment", type="primary", use_container_width=True)
-        else:
-            st.warning("Please select a location on the map first")
-            predict_button = False
-
-    if predict_button:
+    if should_run_assessment:
         # Always fetch fresh satellite data when Run Assessment is clicked
         progress_bar = st.progress(0)
         status_text = st.empty()
