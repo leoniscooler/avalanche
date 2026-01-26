@@ -3973,10 +3973,22 @@ else:
         # Expandable adjustment
         with st.expander("Adjust location"):
             col_coord1, col_coord2 = st.columns(2)
+            # Ensure valid values for number inputs
+            lat_val = loc.get('latitude', 46.8)
+            lon_val = loc.get('longitude', 9.8)
+            # Handle None or invalid values
+            if lat_val is None or not isinstance(lat_val, (int, float)):
+                lat_val = 46.8
+            if lon_val is None or not isinstance(lon_val, (int, float)):
+                lon_val = 9.8
+            # Clamp to valid range
+            lat_val = max(-90.0, min(90.0, float(lat_val)))
+            lon_val = max(-180.0, min(180.0, float(lon_val)))
+            
             with col_coord1:
-                new_lat = st.number_input("Latitude", value=float(loc['latitude']), min_value=-90.0, max_value=90.0, step=0.01)
+                new_lat = st.number_input("Latitude", value=lat_val, min_value=-90.0, max_value=90.0, step=0.01)
             with col_coord2:
-                new_lon = st.number_input("Longitude", value=float(loc['longitude']), min_value=-180.0, max_value=180.0, step=0.01)
+                new_lon = st.number_input("Longitude", value=lon_val, min_value=-180.0, max_value=180.0, step=0.01)
             
             if st.button("Update location"):
                 st.session_state.location['latitude'] = new_lat
