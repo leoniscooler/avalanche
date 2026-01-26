@@ -4087,161 +4087,31 @@ if analysis_mode == "🗺️ Route Analysis":
 # SINGLE POINT ANALYSIS MODE
 # ============================================
 else:
-    # Location selection
-    st.markdown('<p class="section-header">Location</p>', unsafe_allow_html=True)
-
-    # Auto-detect location button with HTML5 Geolocation API
     # Initialize geolocation state
     if 'geo_coords_received' not in st.session_state:
         st.session_state.geo_coords_received = None
     
-    col_btn, col_status = st.columns([1, 2])
-    
-    with col_btn:
-        detect_btn = st.button("📍 Auto-Detect My Location", type="primary", use_container_width=True)
-    
-    # Hidden input to receive coordinates from JavaScript
-    geo_input = st.text_input("geo_coords", key="geo_coords_input", label_visibility="collapsed", 
-                               placeholder="Coordinates will appear here...")
-    
-    # Process coordinates if received
-    if geo_input and ',' in geo_input and geo_input != st.session_state.geo_coords_received:
-        try:
-            parts = geo_input.split(',')
-            if len(parts) >= 2:
-                lat = float(parts[0].strip())
-                lon = float(parts[1].strip())
-                
-                if -90 <= lat <= 90 and -180 <= lon <= 180:
-                    st.session_state.geo_coords_received = geo_input
-                    st.session_state.map_clicked_lat = lat
-                    st.session_state.map_clicked_lon = lon
-                    
-                    # Create location from coordinates
-                    st.session_state.location = create_location_from_coords(lat, lon)
-                    st.session_state.location['elevation'] = get_elevation(lat, lon)
-                    st.session_state.location['source'] = 'GPS/Browser Geolocation'
-                    
-                    # Clear old data and trigger assessment
-                    st.session_state.satellite_raw = None
-                    st.session_state.env_data = None
-                    st.session_state.assessment_results = None
-                    st.session_state.wind_loading_results = None
-                    st.session_state.run_assessment = True
-                    
-                    st.rerun()
-        except (ValueError, IndexError):
-            pass
-    
-    # JavaScript for HTML5 Geolocation - runs when button is clicked
-    if detect_btn:
-        geolocation_js = """
-        <script>
-        (function() {
-            // Find the text input for coordinates
-            const inputs = parent.document.querySelectorAll('input[type="text"]');
-            let coordInput = null;
-            for (let input of inputs) {
-                if (input.placeholder && input.placeholder.includes('Coordinates')) {
-                    coordInput = input;
-                    break;
-                }
-            }
-            
-            if (navigator.geolocation) {
-                navigator.geolocation.getCurrentPosition(
-                    function(position) {
-                        const lat = position.coords.latitude;
-                        const lon = position.coords.longitude;
-                        
-                        if (coordInput) {
-                            // Set value and trigger React's onChange
-                            const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-                            nativeInputValueSetter.call(coordInput, lat.toFixed(6) + ',' + lon.toFixed(6));
-                            coordInput.dispatchEvent(new Event('input', { bubbles: true }));
-                            
-                            // Also try to trigger change event
-                            coordInput.dispatchEvent(new Event('change', { bubbles: true }));
-                        }
-                    },
-                    function(error) {
-                        let msg = 'Location error: ';
-                        switch(error.code) {
-                            case error.PERMISSION_DENIED: msg += 'Permission denied'; break;
-                            case error.POSITION_UNAVAILABLE: msg += 'Position unavailable'; break;
-                            case error.TIMEOUT: msg += 'Request timed out'; break;
-                            default: msg += 'Unknown error';
-                        }
-                        alert(msg + '. Please click on the map to select your location.');
-                    },
-                    { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
-                );
-            } else {
-                alert('Geolocation not supported. Please click on the map to select your location.');
-            }
-        })();
-        </script>
-        <div style="padding: 10px; background: #e0f2fe; border-radius: 8px; text-align: center;">
-            <span style="color: #0369a1;">📍 Requesting location... Please allow access when prompted.</span>
-        </div>
-        """
-        st.components.v1.html(geolocation_js, height=60)
-        st.info("👆 If coordinates appear in the box above, press Enter or click outside the box to apply them.")
-    
-    st.markdown("")
-    st.caption("Or click anywhere on the map to set your location:")
-    
-    # Default to North America (Rocky Mountains region)
-    default_lat = st.session_state.get('map_clicked_lat') or 40.0
-    default_lon = st.session_state.get('map_clicked_lon') or -105.5
-    
-    # Create interactive map
-    m = folium.Map(
-        location=[default_lat, default_lon],
-        zoom_start=4,
-        tiles='OpenStreetMap'
-    )
-    
-    # Add satellite layer
-    folium.TileLayer(
-        tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-        attr='Esri',
-        name='Satellite',
-        overlay=False
-    ).add_to(m)
-    
-    # Add terrain layer
-    folium.TileLayer(
-        tiles='https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
-        attr='OpenTopoMap',
-        name='Terrain',
-        overlay=False
-    ).add_to(m)
-    
-    folium.LayerControl().add_to(m)
-    
-    # Add marker if location selected
-    if st.session_state.get('map_clicked_lat'):
-        folium.Marker(
-            [st.session_state.map_clicked_lat, st.session_state.map_clicked_lon],
-            popup=f"Lat: {st.session_state.map_clicked_lat:.4f}, Lon: {st.session_state.map_clicked_lon:.4f}",
-            icon=folium.Icon(color='red', icon='map-marker', prefix='fa')
-        ).add_to(m)
-    
-    # Display map
-    map_data = st_folium(m, width=700, height=350, key="main_location_map", returned_objects=["last_clicked"])
-    
-    if map_data and map_data.get('last_clicked'):
-        st.session_state.map_clicked_lat = map_data['last_clicked']['lat']
-        st.session_state.map_clicked_lon = map_data['last_clicked']['lng']
-    
-    # Show selected location with refresh button
-    if st.session_state.get('map_clicked_lat'):
-        col_loc, col_refresh = st.columns([4, 1])
-        with col_loc:
-            st.success(f"📍 Selected: {st.session_state.map_clicked_lat:.4f}°N, {st.session_state.map_clicked_lon:.4f}°E")
-        with col_refresh:
-            if st.button("🔄 New Location", key="refresh_location", help="Clear selection and choose a new location"):
+    # ============================================
+    # SECTION 1: RESULTS (if available) - MOST PROMINENT
+    # ============================================
+    if st.session_state.assessment_results:
+        results = st.session_state.assessment_results
+        loc = st.session_state.location
+        
+        # Location header with change button
+        loc_col1, loc_col2 = st.columns([5, 1])
+        with loc_col1:
+            st.markdown(f"""
+            <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.5rem;">
+                <span style="font-size: 1.5rem;">📍</span>
+                <div>
+                    <div style="font-size: 1.1rem; font-weight: 600; color: #1f2937;">{loc.get('city', 'Unknown')}, {loc.get('region', '')}</div>
+                    <div style="font-size: 0.8rem; color: #6b7280;">{loc['latitude']:.4f}°N, {loc['longitude']:.4f}°E · Elevation: {loc.get('elevation', 'N/A')}m</div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+        with loc_col2:
+            if st.button("📍 Change", key="change_location_top", use_container_width=True):
                 st.session_state.map_clicked_lat = None
                 st.session_state.map_clicked_lon = None
                 st.session_state.location = None
@@ -4250,279 +4120,410 @@ else:
                 st.session_state.assessment_results = None
                 st.session_state.wind_loading_results = None
                 st.rerun()
-    
-    # ============================================
-    # DISPLAY ASSESSMENT RESULTS RIGHT AFTER SELECTED LOCATION
-    # ============================================
-    if st.session_state.assessment_results:
-        results = st.session_state.assessment_results
         
-        st.markdown("")  # Spacing
+        # Main risk card
+        st.markdown(f"""
+        <div class="risk-card {results['risk_class']}" style="margin-top: 1rem;">
+            <div class="risk-label">Current Avalanche Risk</div>
+            <div class="risk-level">{results['risk_level']}</div>
+            <div class="risk-confidence">{results['avalanche_probability']*100:.0f}% probability</div>
+        </div>
+        """, unsafe_allow_html=True)
         
-        col1, col2 = st.columns([1, 2])
+        confidence_label = "High" if results['model_confidence'] >= 0.7 else "Medium" if results['model_confidence'] >= 0.4 else "Low"
+        st.caption(f"{results['risk_message']} · Model confidence: {confidence_label}")
         
-        with col1:
-            st.markdown(f"""
-            <div class="risk-card {results['risk_class']}">
-                <div class="risk-label">Avalanche Risk</div>
-                <div class="risk-level">{results['risk_level']}</div>
-                <div class="risk-confidence">{results['avalanche_probability']*100:.0f}% probability</div>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            # Show model confidence separately
-            confidence_label = "High" if results['model_confidence'] >= 0.7 else "Medium" if results['model_confidence'] >= 0.4 else "Low"
-            st.caption(f"{results['risk_message']} • Model confidence: {confidence_label}")
-        
-        # Recommendations
-        st.markdown('<p class="section-header">Recommendations</p>', unsafe_allow_html=True)
-        
+        # Quick recommendations based on risk
         prob = results['avalanche_probability']
         if prob >= 0.7:
             st.markdown("""
-            <div class="warning-box">
-                <strong>High Risk Actions:</strong><br>
-                • Avoid all avalanche terrain<br>
-                • Do not travel on or below steep slopes<br>
-                • Check local avalanche advisories<br>
-                • Consider postponing backcountry travel
+            <div class="warning-box" style="margin: 1rem 0;">
+                <strong>⚠️ High Risk:</strong> Avoid avalanche terrain · Stay off steep slopes · Check local advisories
             </div>
             """, unsafe_allow_html=True)
         elif prob >= 0.4:
             st.markdown("""
-            <div class="warning-box">
-                <strong>Moderate Risk Actions:</strong><br>
-                • Use caution in avalanche terrain<br>
-                • Carry avalanche safety equipment<br>
-                • Travel with partners<br>
-                • Identify safe zones and escape routes
+            <div class="warning-box" style="margin: 1rem 0;">
+                <strong>⚠️ Caution:</strong> Use avalanche safety gear · Travel with partners · Know escape routes
             </div>
             """, unsafe_allow_html=True)
         else:
             st.markdown("""
-            <div class="info-box">
-                <strong>Lower Risk Actions:</strong><br>
-                • Conditions appear more stable<br>
-                • Still carry avalanche safety gear<br>
-                • Remain vigilant for changing conditions<br>
-                • Check for updated forecasts
+            <div class="info-box" style="margin: 1rem 0;">
+                <strong>✓ Lower Risk:</strong> Conditions appear more stable · Still carry safety gear · Stay vigilant
             </div>
             """, unsafe_allow_html=True)
         
-        # ============================================
-        # 7-DAY RISK FORECAST (right after assessment)
-        # ============================================
-        st.markdown('<p class="section-header">7-Day Risk Forecast</p>', unsafe_allow_html=True)
+        st.markdown("---")
         
-        loc = results.get('location', st.session_state.location)
-        if loc:
-            with st.spinner("Loading forecast..."):
-                forecast = fetch_7day_forecast(loc['latitude'], loc['longitude'])
-            
-            if forecast.get('available') and forecast.get('daily'):
-                chart_result = create_forecast_chart(forecast)
+        # ============================================
+        # TABS FOR ORGANIZED CONTENT
+        # ============================================
+        tab_forecast, tab_wind, tab_conditions, tab_details = st.tabs([
+            "📅 7-Day Forecast", "💨 Wind Loading", "🌡️ Current Conditions", "ℹ️ Details"
+        ])
+        
+        # TAB 1: 7-Day Forecast
+        with tab_forecast:
+            forecast_loc = results.get('location', st.session_state.location)
+            if forecast_loc:
+                forecast = fetch_7day_forecast(forecast_loc['latitude'], forecast_loc['longitude'])
                 
-                if chart_result:
-                    chart_data, daily = chart_result
+                if forecast.get('available') and forecast.get('daily'):
+                    chart_result = create_forecast_chart(forecast)
                     
-                    # Risk level cards for each day
-                    cols = st.columns(7)
-                    for i, day in enumerate(daily):
-                        with cols[i]:
-                            risk_score = day['risk_score']
-                            risk_level = day['risk_level']
-                            
-                            # Color based on risk
-                            if risk_level == 'HIGH':
-                                bg_color = '#fef2f2'
-                                border_color = '#dc2626'
-                                text_color = '#dc2626'
-                            elif risk_level == 'MODERATE':
-                                bg_color = '#fffbeb'
-                                border_color = '#f59e0b'
-                                text_color = '#d97706'
-                            else:
-                                bg_color = '#f0fdf4'
-                                border_color = '#10b981'
-                                text_color = '#059669'
-                            
-                            st.markdown(f"""
-                            <div style="background: {bg_color}; border: 2px solid {border_color}; 
-                                        border-radius: 8px; padding: 0.5rem; text-align: center; margin-bottom: 0.5rem;">
-                                <div style="font-size: 0.7rem; color: #6b7280; font-weight: 500;">{day['date_formatted']}</div>
-                                <div style="font-size: 1.1rem; font-weight: 700; color: {text_color};">{risk_score*100:.0f}%</div>
-                                <div style="font-size: 0.6rem; color: {text_color};">{risk_level}</div>
-                            </div>
-                            """, unsafe_allow_html=True)
-                    
-                    # Expandable details with chart
-                    with st.expander("View detailed forecast"):
+                    if chart_result:
+                        chart_data, daily = chart_result
+                        
+                        # Risk level cards for each day
+                        cols = st.columns(7)
+                        for i, day in enumerate(daily):
+                            with cols[i]:
+                                risk_score = day['risk_score']
+                                risk_level = day['risk_level']
+                                
+                                if risk_level == 'HIGH':
+                                    bg_color = '#fef2f2'
+                                    border_color = '#dc2626'
+                                    text_color = '#dc2626'
+                                elif risk_level == 'MODERATE':
+                                    bg_color = '#fffbeb'
+                                    border_color = '#f59e0b'
+                                    text_color = '#d97706'
+                                else:
+                                    bg_color = '#f0fdf4'
+                                    border_color = '#10b981'
+                                    text_color = '#059669'
+                                
+                                st.markdown(f"""
+                                <div style="background: {bg_color}; border: 2px solid {border_color}; 
+                                            border-radius: 8px; padding: 0.5rem; text-align: center;">
+                                    <div style="font-size: 0.7rem; color: #6b7280; font-weight: 500;">{day['date_formatted']}</div>
+                                    <div style="font-size: 1.1rem; font-weight: 700; color: {text_color};">{risk_score*100:.0f}%</div>
+                                    <div style="font-size: 0.6rem; color: {text_color};">{risk_level}</div>
+                                </div>
+                                """, unsafe_allow_html=True)
+                        
                         # Risk trend chart
+                        st.markdown("")
                         st.markdown("**Risk Trend**")
                         risk_df = pd.DataFrame({
                             'Day': [d['date_formatted'] for d in daily],
-                            'Risk': [d['risk_score'] * 100 for d in daily]
+                            'Risk (%)': [d['risk_score'] * 100 for d in daily]
                         })
                         st.bar_chart(risk_df.set_index('Day'))
                         
-                        # Weather details table
-                        st.markdown("**Weather Factors**")
-                        weather_df = pd.DataFrame({
-                            'Day': [d['date_formatted'] for d in daily],
-                            'Temp Max': [f"{d.get('temp_max', 0):.0f}°C" for d in daily],
-                            'Temp Min': [f"{d.get('temp_min', 0):.0f}°C" for d in daily],
-                            'Snow': [f"{d.get('snowfall', 0):.0f} cm" for d in daily],
-                            'Rain': [f"{d.get('precipitation', 0):.1f} mm" for d in daily],
-                            'Wind': [f"{d.get('wind_max', 0):.0f} km/h" for d in daily],
-                            'Gusts': [f"{d.get('wind_gust', 0):.0f} km/h" for d in daily]
-                        })
-                        st.dataframe(weather_df, hide_index=True, use_container_width=True)
-                        
-                        st.caption("Risk forecast based on temperature, snowfall, wind, and radiation predictions from Open-Meteo.")
-            else:
-                st.info("Forecast data not available for this location")
-        
-        # ============================================
-        # WIND LOADING ANALYSIS DISPLAY
-        # ============================================
-        if st.session_state.wind_loading_results and st.session_state.wind_loading_results.get('wind_analysis'):
-            wind_results = st.session_state.wind_loading_results
-            wind_data = wind_results['wind_data']
-            wind_analysis = wind_results['wind_analysis']
-            wind_speed = wind_results['wind_speed']
-            loc = wind_results['location']
-            lat = loc['latitude']
-            lon = loc['longitude']
-            
-            st.markdown('<p class="section-header">Wind Loading Zones</p>', unsafe_allow_html=True)
-            
-            # Display wind metrics
-            col1, col2, col3, col4 = st.columns(4)
-            with col1:
-                st.metric("Wind From", f"{wind_analysis['wind_direction_cardinal']}")
-            with col2:
-                st.metric("Wind Speed", f"{wind_speed:.1f} m/s")
-            with col3:
-                st.metric("Loading Risk", wind_analysis['loading_risk'])
-            with col4:
-                max_gust = wind_data.get('current_gusts') or wind_data.get('max_speed_24h', 0)
-                st.metric("Gusts", f"{max_gust:.1f} m/s")
-            
-            # Risk display
-            loading_risk = wind_analysis['loading_risk']
-            risk_colors = {
-                'EXTREME': ('#fef2f2', '#dc2626'),
-                'HIGH': ('#fef2f2', '#dc2626'),
-                'MODERATE': ('#fffbeb', '#f59e0b'),
-                'LOW': ('#f0fdf4', '#10b981')
-            }
-            bg_color, border_color = risk_colors.get(loading_risk, ('#f9fafb', '#6b7280'))
-            
-            st.markdown(f"""
-            <div style="background: {bg_color}; 
-                        border-left: 4px solid {border_color};
-                        padding: 1rem; border-radius: 0 8px 8px 0; margin: 1rem 0;">
-                <strong>Wind Loading: {loading_risk}</strong><br>
-                <span style="font-size: 0.9rem;">
-                    Wind from <strong>{wind_analysis['wind_direction_cardinal']}</strong> ({wind_analysis['wind_direction']}°)<br>
-                    Danger slopes (leeward): <strong>{wind_analysis['leeward_cardinal']}</strong> facing
-                </span>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            # Aspect recommendations
-            col1, col2 = st.columns(2)
-            with col1:
-                st.markdown("**Avoid (Wind Loaded):**")
-                leeward = wind_analysis.get('leeward_aspects', [])
-                cross = wind_analysis.get('cross_load_aspects', [])
-                if leeward:
-                    st.markdown(f"🔴 Leeward: {', '.join(leeward)}")
-                if cross:
-                    st.markdown(f"🟠 Cross-loaded: {', '.join(cross)}")
-                if not leeward and not cross:
-                    st.markdown("• Light winds - minimal loading")
-            
-            with col2:
-                st.markdown("**Prefer (Windward/Safe):**")
-                safe = wind_analysis.get('safe_aspects', [])
-                if safe:
-                    st.markdown(f"🟢 {', '.join(safe)}")
+                        # Weather details
+                        with st.expander("View detailed weather forecast"):
+                            weather_df = pd.DataFrame({
+                                'Day': [d['date_formatted'] for d in daily],
+                                'High': [f"{d.get('temp_max', 0):.0f}°C" for d in daily],
+                                'Low': [f"{d.get('temp_min', 0):.0f}°C" for d in daily],
+                                'Snow': [f"{d.get('snowfall', 0):.0f}cm" for d in daily],
+                                'Rain': [f"{d.get('precipitation', 0):.1f}mm" for d in daily],
+                                'Wind': [f"{d.get('wind_max', 0):.0f}km/h" for d in daily],
+                                'Gusts': [f"{d.get('wind_gust', 0):.0f}km/h" for d in daily]
+                            })
+                            st.dataframe(weather_df, hide_index=True, use_container_width=True)
                 else:
-                    st.markdown("• All aspects similar risk")
-            
-            # Wind loading map
-            with st.expander("View Wind Loading Zones on Map"):
-                wind_map = folium.Map(
-                    location=[lat, lon],
-                    zoom_start=13,
-                    tiles='OpenStreetMap'
-                )
+                    st.info("Forecast data not available for this location")
+        
+        # TAB 2: Wind Loading
+        with tab_wind:
+            if st.session_state.wind_loading_results and st.session_state.wind_loading_results.get('wind_analysis'):
+                wind_results = st.session_state.wind_loading_results
+                wind_data = wind_results['wind_data']
+                wind_analysis = wind_results['wind_analysis']
+                wind_speed = wind_results['wind_speed']
+                wind_loc = wind_results['location']
                 
-                # Add terrain layer
-                folium.TileLayer(
-                    tiles='https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
-                    attr='OpenTopoMap',
-                    name='Terrain',
-                    overlay=False
-                ).add_to(wind_map)
+                # Wind metrics
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    st.metric("Direction", f"{wind_analysis['wind_direction_cardinal']}")
+                with col2:
+                    st.metric("Speed", f"{wind_speed:.1f} m/s")
+                with col3:
+                    st.metric("Loading Risk", wind_analysis['loading_risk'])
+                with col4:
+                    max_gust = wind_data.get('current_gusts') or wind_data.get('max_speed_24h', 0)
+                    st.metric("Gusts", f"{max_gust:.1f} m/s")
                 
-                # Add wind loading overlays
-                overlays = create_wind_loading_overlay(lat, lon, wind_analysis, radius_km=2)
-                for name, overlay in overlays:
-                    overlay.add_to(wind_map)
+                # Loading risk banner
+                loading_risk = wind_analysis['loading_risk']
+                risk_colors = {
+                    'EXTREME': ('#fef2f2', '#dc2626'),
+                    'HIGH': ('#fef2f2', '#dc2626'),
+                    'MODERATE': ('#fffbeb', '#f59e0b'),
+                    'LOW': ('#f0fdf4', '#10b981')
+                }
+                bg_color, border_color = risk_colors.get(loading_risk, ('#f9fafb', '#6b7280'))
                 
-                # Center marker
-                folium.Marker(
-                    [lat, lon],
-                    popup=f"Analysis Point<br>Elevation: {loc.get('elevation', 'N/A')}m",
-                    icon=folium.Icon(color='blue', icon='info-sign')
-                ).add_to(wind_map)
-                
-                folium.LayerControl().add_to(wind_map)
-                
-                st.markdown("""
-                <div style="font-size: 0.8rem; color: #6b7280; margin-bottom: 0.5rem;">
-                    <strong>Legend:</strong> 
-                    <span style="color: #dc2626;">■</span> Leeward (High Risk) · 
-                    <span style="color: #f59e0b;">■</span> Cross-loaded (Moderate) · 
-                    <span style="color: #10b981;">■</span> Windward (Lower Risk) · 
-                    <span style="color: #1f2937;">→</span> Wind Direction
+                st.markdown(f"""
+                <div style="background: {bg_color}; border-left: 4px solid {border_color};
+                            padding: 1rem; border-radius: 0 8px 8px 0; margin: 1rem 0;">
+                    <strong>Danger slopes (leeward): {wind_analysis['leeward_cardinal']}-facing</strong><br>
+                    <span style="font-size: 0.9rem; color: #6b7280;">
+                        Wind from {wind_analysis['wind_direction_cardinal']} ({wind_analysis['wind_direction']}°)
+                    </span>
                 </div>
                 """, unsafe_allow_html=True)
                 
-                st_folium(wind_map, width=None, height=400, key="single_point_wind_map_top")
+                # Slope recommendations
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.markdown("**🔴 Avoid (Wind Loaded):**")
+                    leeward = wind_analysis.get('leeward_aspects', [])
+                    cross = wind_analysis.get('cross_load_aspects', [])
+                    if leeward:
+                        st.markdown(f"Leeward: {', '.join(leeward)}")
+                    if cross:
+                        st.markdown(f"Cross-loaded: {', '.join(cross)}")
+                    if not leeward and not cross:
+                        st.markdown("Light winds - minimal loading")
+                
+                with col2:
+                    st.markdown("**🟢 Prefer (Safer):**")
+                    safe = wind_analysis.get('safe_aspects', [])
+                    if safe:
+                        st.markdown(f"{', '.join(safe)}")
+                    else:
+                        st.markdown("All aspects similar risk")
+                
+                # Wind loading map
+                with st.expander("View Wind Loading Map"):
+                    wind_map = folium.Map(
+                        location=[wind_loc['latitude'], wind_loc['longitude']],
+                        zoom_start=13,
+                        tiles='OpenStreetMap'
+                    )
+                    
+                    folium.TileLayer(
+                        tiles='https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
+                        attr='OpenTopoMap',
+                        name='Terrain',
+                        overlay=False
+                    ).add_to(wind_map)
+                    
+                    overlays = create_wind_loading_overlay(wind_loc['latitude'], wind_loc['longitude'], wind_analysis, radius_km=2)
+                    for name, overlay in overlays:
+                        overlay.add_to(wind_map)
+                    
+                    folium.Marker(
+                        [wind_loc['latitude'], wind_loc['longitude']],
+                        popup=f"Elevation: {wind_loc.get('elevation', 'N/A')}m",
+                        icon=folium.Icon(color='blue', icon='info-sign')
+                    ).add_to(wind_map)
+                    
+                    folium.LayerControl().add_to(wind_map)
+                    
+                    st.markdown("""
+                    <div style="font-size: 0.8rem; color: #6b7280; margin-bottom: 0.5rem;">
+                        <span style="color: #dc2626;">■</span> Leeward (High Risk) · 
+                        <span style="color: #f59e0b;">■</span> Cross-loaded · 
+                        <span style="color: #10b981;">■</span> Windward (Safer)
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    st_folium(wind_map, width=None, height=400, key="wind_map_tab")
+            else:
+                st.info("Wind data not available for this location")
+        
+        # TAB 3: Current Conditions
+        with tab_conditions:
+            if st.session_state.env_data:
+                env = st.session_state.env_data
+                
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    temp = env.get('TA', 0)
+                    st.metric("Temperature", f"{temp:.1f}°C")
+                with col2:
+                    snow = env.get('max_height', 0) * 100
+                    snow_change = env.get('max_height_1_diff', 0) * 100
+                    st.metric("Snow Depth", f"{snow:.0f} cm", delta=f"{snow_change:+.0f}/24h")
+                with col3:
+                    radiation = env.get('ISWR_daily', 0)
+                    st.metric("Solar Radiation", f"{radiation:.0f} W/m²")
+                with col4:
+                    stability = env.get('S5', 2.5)
+                    st.metric("Stability Index", f"{stability:.2f}")
+                
+                # Stability interpretation
+                if stability < 1.0:
+                    st.warning("⚠️ Very low stability - high avalanche potential")
+                elif stability < 1.5:
+                    st.warning("⚠️ Poor stability - significant avalanche potential")
+                elif stability < 2.0:
+                    st.info("Moderate stability - some avalanche potential")
+                else:
+                    st.success("Good stability - lower avalanche potential")
+            else:
+                st.info("No environmental data available")
+        
+        # TAB 4: Details
+        with tab_details:
+            st.markdown("**Assessment Method:**")
+            st.markdown("""
+            This assessment uses a Physics-Informed Neural Network (PINN) that combines:
+            - Real-time satellite observations (MODIS, VIIRS)
+            - ERA5 reanalysis data
+            - Weather station networks (SNOTEL, MesoWest)
+            - Physical snowpack mechanics
+            """)
             
-            # Detailed recommendations
-            with st.expander("Wind Loading Details"):
-                st.markdown("**How Wind Loading Creates Avalanche Danger:**")
-                st.markdown("""
-                Wind transports loose snow and deposits it on **leeward** (downwind) slopes, 
-                creating dense, cohesive **wind slabs** that can release as avalanches.
-                
-                - **Leeward slopes** (facing away from wind): Highest accumulation, greatest danger
-                - **Cross-loaded slopes** (perpendicular to wind): Moderate accumulation risk
-                - **Windward slopes** (facing into wind): Usually scoured, relatively safer
-                """)
-                
-                if wind_analysis.get('recommendations'):
-                    st.markdown("**Current Conditions:**")
-                    for rec in wind_analysis['recommendations']:
-                        st.markdown(f"• {rec}")
-                
-                # 24h wind history
-                if wind_data.get('avg_speed_24h'):
-                    st.markdown(f"""
-                    **24-Hour Wind Summary:**
-                    - Average speed: {wind_data['avg_speed_24h']:.1f} m/s
-                    - Maximum speed: {wind_data.get('max_speed_24h', 0):.1f} m/s
-                    - Predominant direction: {get_cardinal_direction(wind_data.get('avg_direction_24h', 0))}
-                    """)
-        elif st.session_state.wind_loading_results and not st.session_state.wind_loading_results.get('wind_analysis'):
-            st.info("Wind data not available for this location")
+            if st.session_state.satellite_raw:
+                raw = st.session_state.satellite_raw
+                if 'summary' in raw:
+                    summary = raw['summary']
+                    st.markdown(f"**Data Sources:** {summary['successful_sources']} of {summary['total_sources']} sources connected")
+                    
+                    with st.expander("View all data sources"):
+                        cols = st.columns(3)
+                        all_sources = list(raw['data_quality'].items())
+                        for i, (name, status) in enumerate(all_sources):
+                            col_idx = i % 3
+                            with cols[col_idx]:
+                                clean_name = name.replace("(", "").replace(")", "").replace("Western US", "").strip()[:25]
+                                icon = "✓" if status == 'success' else "○"
+                                st.markdown(f"{icon} {clean_name}")
+            
+            st.markdown("---")
+            st.caption("⚠️ This tool provides estimates and should not replace professional avalanche forecasts. Always check with local avalanche centers.")
+        
+        st.markdown("---")
     
-    st.markdown("")  # Spacing
+    # ============================================
+    # SECTION 2: LOCATION SELECTION (when no results or user wants to change)
+    # ============================================
+    if not st.session_state.assessment_results:
+        st.markdown('<p class="section-header">Select Location</p>', unsafe_allow_html=True)
+        
+        # Auto-detect button
+        col_btn, col_space = st.columns([1, 2])
+        with col_btn:
+            detect_btn = st.button("📍 Auto-Detect My Location", type="primary", use_container_width=True)
+        
+        # Hidden input for geolocation coordinates
+        geo_input = st.text_input("geo_coords", key="geo_coords_input", label_visibility="collapsed", 
+                                   placeholder="Coordinates will appear here...")
+        
+        # Process received coordinates
+        if geo_input and ',' in geo_input and geo_input != st.session_state.geo_coords_received:
+            try:
+                parts = geo_input.split(',')
+                if len(parts) >= 2:
+                    lat = float(parts[0].strip())
+                    lon = float(parts[1].strip())
+                    
+                    if -90 <= lat <= 90 and -180 <= lon <= 180:
+                        st.session_state.geo_coords_received = geo_input
+                        st.session_state.map_clicked_lat = lat
+                        st.session_state.map_clicked_lon = lon
+                        st.session_state.location = create_location_from_coords(lat, lon)
+                        st.session_state.location['elevation'] = get_elevation(lat, lon)
+                        st.session_state.location['source'] = 'GPS/Browser Geolocation'
+                        st.session_state.satellite_raw = None
+                        st.session_state.env_data = None
+                        st.session_state.assessment_results = None
+                        st.session_state.wind_loading_results = None
+                        st.session_state.run_assessment = True
+                        st.rerun()
+            except (ValueError, IndexError):
+                pass
+        
+        # Geolocation JavaScript
+        if detect_btn:
+            geolocation_js = """
+            <script>
+            (function() {
+                const inputs = parent.document.querySelectorAll('input[type="text"]');
+                let coordInput = null;
+                for (let input of inputs) {
+                    if (input.placeholder && input.placeholder.includes('Coordinates')) {
+                        coordInput = input;
+                        break;
+                    }
+                }
+                
+                if (navigator.geolocation) {
+                    navigator.geolocation.getCurrentPosition(
+                        function(position) {
+                            const lat = position.coords.latitude;
+                            const lon = position.coords.longitude;
+                            
+                            if (coordInput) {
+                                const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+                                nativeInputValueSetter.call(coordInput, lat.toFixed(6) + ',' + lon.toFixed(6));
+                                coordInput.dispatchEvent(new Event('input', { bubbles: true }));
+                                coordInput.dispatchEvent(new Event('change', { bubbles: true }));
+                            }
+                        },
+                        function(error) {
+                            let msg = 'Location error: ';
+                            switch(error.code) {
+                                case error.PERMISSION_DENIED: msg += 'Permission denied'; break;
+                                case error.POSITION_UNAVAILABLE: msg += 'Position unavailable'; break;
+                                case error.TIMEOUT: msg += 'Request timed out'; break;
+                                default: msg += 'Unknown error';
+                            }
+                            alert(msg + '. Please click on the map to select your location.');
+                        },
+                        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+                    );
+                } else {
+                    alert('Geolocation not supported. Please click on the map to select your location.');
+                }
+            })();
+            </script>
+            <div style="padding: 10px; background: #e0f2fe; border-radius: 8px; text-align: center;">
+                <span style="color: #0369a1;">📍 Requesting location... Please allow access when prompted.</span>
+            </div>
+            """
+            st.components.v1.html(geolocation_js, height=60)
+            st.info("👆 If coordinates appear above, press Enter to apply them.")
+        
+        st.markdown("")
+        st.caption("Or click on the map:")
+        
+        # Map
+        default_lat = st.session_state.get('map_clicked_lat') or 40.0
+        default_lon = st.session_state.get('map_clicked_lon') or -105.5
+        
+        m = folium.Map(location=[default_lat, default_lon], zoom_start=4, tiles='OpenStreetMap')
+        
+        folium.TileLayer(
+            tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+            attr='Esri', name='Satellite', overlay=False
+        ).add_to(m)
+        
+        folium.TileLayer(
+            tiles='https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
+            attr='OpenTopoMap', name='Terrain', overlay=False
+        ).add_to(m)
+        
+        folium.LayerControl().add_to(m)
+        
+        if st.session_state.get('map_clicked_lat'):
+            folium.Marker(
+                [st.session_state.map_clicked_lat, st.session_state.map_clicked_lon],
+                popup=f"Lat: {st.session_state.map_clicked_lat:.4f}, Lon: {st.session_state.map_clicked_lon:.4f}",
+                icon=folium.Icon(color='red', icon='map-marker', prefix='fa')
+            ).add_to(m)
+        
+        map_data = st_folium(m, width=None, height=400, key="main_location_map", returned_objects=["last_clicked"])
+        
+        if map_data and map_data.get('last_clicked'):
+            st.session_state.map_clicked_lat = map_data['last_clicked']['lat']
+            st.session_state.map_clicked_lon = map_data['last_clicked']['lng']
+        
+        # Show selected location
+        if st.session_state.get('map_clicked_lat'):
+            st.success(f"📍 Selected: {st.session_state.map_clicked_lat:.4f}°N, {st.session_state.map_clicked_lon:.4f}°E")
     
+    # ============================================
+    # LOCATION PROCESSING AND ASSESSMENT TRIGGER
+    # ============================================
     # Set location from map click
     if st.session_state.get('map_clicked_lat'):
         if st.session_state.location is None or \
@@ -4542,126 +4543,6 @@ else:
             st.session_state.env_data = None
             st.session_state.assessment_results = None
             st.session_state.wind_loading_results = None
-    
-    # Display location info
-    if st.session_state.location:
-        loc = st.session_state.location
-        
-        col_info1, col_info2, col_info3 = st.columns(3)
-        with col_info1:
-            st.markdown(f"**{loc['city']}, {loc['region']}**")
-            st.caption(loc['country'])
-        with col_info2:
-            st.markdown(f"**{loc['latitude']:.4f}°N, {loc['longitude']:.4f}°E**")
-            st.caption("Coordinates")
-        with col_info3:
-            elev = loc.get('elevation', 'Unknown')
-            st.markdown(f"**{elev}m**")
-            st.caption("Elevation")
-        
-        # Expandable adjustment
-        with st.expander("Adjust location"):
-            col_coord1, col_coord2 = st.columns(2)
-            # Ensure valid values for number inputs
-            lat_val = loc.get('latitude', 46.8)
-            lon_val = loc.get('longitude', 9.8)
-            # Handle None or invalid values
-            if lat_val is None or not isinstance(lat_val, (int, float)):
-                lat_val = 46.8
-            if lon_val is None or not isinstance(lon_val, (int, float)):
-                lon_val = 9.8
-            # Clamp to valid range
-            lat_val = max(-90.0, min(90.0, float(lat_val)))
-            lon_val = max(-180.0, min(180.0, float(lon_val)))
-            
-            with col_coord1:
-                new_lat = st.number_input("Latitude", value=lat_val, min_value=-90.0, max_value=90.0, step=0.01)
-            with col_coord2:
-                new_lon = st.number_input("Longitude", value=lon_val, min_value=-180.0, max_value=180.0, step=0.01)
-            
-            if st.button("Update location"):
-                st.session_state.location['latitude'] = new_lat
-                st.session_state.location['longitude'] = new_lon
-                st.session_state.location['elevation'] = get_elevation(new_lat, new_lon)
-                
-                reverse_geo = get_reverse_geocode(new_lat, new_lon)
-                if reverse_geo:
-                    st.session_state.location['city'] = reverse_geo.get('city', 'Unknown')
-                    st.session_state.location['region'] = reverse_geo.get('region', 'Unknown')
-                    st.session_state.location['country'] = reverse_geo.get('country', 'Unknown')
-                
-                # Clear cached data and trigger assessment
-                st.session_state.satellite_raw = None
-                st.session_state.env_data = None
-                st.session_state.assessment_results = None
-                st.session_state.wind_loading_results = None
-                st.session_state.run_assessment = True
-                
-                st.rerun()
-    
-    # Display satellite data status (compact version)
-    if st.session_state.satellite_raw:
-        raw = st.session_state.satellite_raw
-        
-        # Compact status summary
-        if 'summary' in raw:
-            summary = raw['summary']
-            success_count = summary['successful_sources']
-            total_count = summary['total_sources']
-            
-            st.markdown(f"""
-            <div style="background: #f9fafb; padding: 0.75rem; border-radius: 8px; margin-top: 1rem;">
-                <span style="color: #059669; font-weight: 500;">● {success_count} sources connected</span>
-                <span style="color: #6b7280; margin-left: 1rem;">of {total_count} available</span>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        # Compact expandable details
-        with st.expander("View data sources"):
-            cols = st.columns(3)
-            all_sources = list(raw['data_quality'].items())
-            
-            for i, (name, status) in enumerate(all_sources):
-                col_idx = i % 3
-                with cols[col_idx]:
-                    # Clean up source name
-                    clean_name = name.replace("(", "").replace(")", "").replace("Western US", "").strip()
-                    if len(clean_name) > 20:
-                        clean_name = clean_name[:20] + "..."
-                    
-                    if status == 'success':
-                        st.markdown(f"<span class='status-dot status-online'></span>{clean_name}", unsafe_allow_html=True)
-                    else:
-                        st.markdown(f"<span class='status-dot status-partial'></span>{clean_name}", unsafe_allow_html=True)
-    
-    # Display fetched data summary
-    if st.session_state.env_data:
-        st.markdown('<p class="section-header">Current Conditions</p>', unsafe_allow_html=True)
-        
-        env = st.session_state.env_data
-        
-        # Key metrics in a cleaner layout
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            temp = env.get('TA', 0)
-            st.metric("Temperature", f"{temp:.1f}°C")
-        with col2:
-            snow = env.get('max_height', 0) * 100
-            snow_change = env.get('max_height_1_diff', 0) * 100
-            st.metric("Snow Depth", f"{snow:.0f} cm", delta=f"{snow_change:+.0f} cm/24h")
-        with col3:
-            radiation = env.get('ISWR_daily', 0)
-            st.metric("Solar Radiation", f"{radiation:.0f} W/m²")
-        with col4:
-            stability = env.get('S5', 2.5)
-            st.metric("Stability Index", f"{stability:.2f}")
-        
-        # Update session state inputs
-        for key, value in env.items():
-            if key in features_for_input:
-                st.session_state.inputs[key] = value
-
-st.markdown("")  # Spacing
 
 # Sidebar - minimal and clean
 st.sidebar.markdown("### About")
@@ -4693,17 +4574,11 @@ def get_input_value(key, default=0.0, min_val=None, max_val=None):
         value = max_val
     return value
 
-# Prediction section (only for single point mode)
+# Auto-assessment trigger (only for single point mode)
 if analysis_mode == "📍 Single Point":
-    st.markdown('<p class="section-header">Risk Assessment</p>', unsafe_allow_html=True)
-    
     # Initialize run_assessment flag if not exists
     if 'run_assessment' not in st.session_state:
         st.session_state.run_assessment = False
-    
-    # Show instruction if no location selected yet
-    if not st.session_state.location:
-        st.info("👆 Click on the map or use Auto-Detect to select a location. Assessment will run automatically.")
     
     # Auto-run assessment when location is set and flag is True
     should_run_assessment = st.session_state.location and st.session_state.run_assessment
@@ -4713,7 +4588,7 @@ if analysis_mode == "📍 Single Point":
         st.session_state.run_assessment = False
 
     if should_run_assessment:
-        # Always fetch fresh satellite data when Run Assessment is clicked
+        # Fetch satellite data and run assessment
         progress_bar = st.progress(0)
         status_text = st.empty()
         
