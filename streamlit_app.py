@@ -4251,6 +4251,276 @@ else:
                 st.session_state.wind_loading_results = None
                 st.rerun()
     
+    # ============================================
+    # DISPLAY ASSESSMENT RESULTS RIGHT AFTER SELECTED LOCATION
+    # ============================================
+    if st.session_state.assessment_results:
+        results = st.session_state.assessment_results
+        
+        st.markdown("")  # Spacing
+        
+        col1, col2 = st.columns([1, 2])
+        
+        with col1:
+            st.markdown(f"""
+            <div class="risk-card {results['risk_class']}">
+                <div class="risk-label">Avalanche Risk</div>
+                <div class="risk-level">{results['risk_level']}</div>
+                <div class="risk-confidence">{results['avalanche_probability']*100:.0f}% probability</div>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            # Show model confidence separately
+            confidence_label = "High" if results['model_confidence'] >= 0.7 else "Medium" if results['model_confidence'] >= 0.4 else "Low"
+            st.caption(f"{results['risk_message']} • Model confidence: {confidence_label}")
+        
+        # Recommendations
+        st.markdown('<p class="section-header">Recommendations</p>', unsafe_allow_html=True)
+        
+        prob = results['avalanche_probability']
+        if prob >= 0.7:
+            st.markdown("""
+            <div class="warning-box">
+                <strong>High Risk Actions:</strong><br>
+                • Avoid all avalanche terrain<br>
+                • Do not travel on or below steep slopes<br>
+                • Check local avalanche advisories<br>
+                • Consider postponing backcountry travel
+            </div>
+            """, unsafe_allow_html=True)
+        elif prob >= 0.4:
+            st.markdown("""
+            <div class="warning-box">
+                <strong>Moderate Risk Actions:</strong><br>
+                • Use caution in avalanche terrain<br>
+                • Carry avalanche safety equipment<br>
+                • Travel with partners<br>
+                • Identify safe zones and escape routes
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            st.markdown("""
+            <div class="info-box">
+                <strong>Lower Risk Actions:</strong><br>
+                • Conditions appear more stable<br>
+                • Still carry avalanche safety gear<br>
+                • Remain vigilant for changing conditions<br>
+                • Check for updated forecasts
+            </div>
+            """, unsafe_allow_html=True)
+        
+        # ============================================
+        # 7-DAY RISK FORECAST (right after assessment)
+        # ============================================
+        st.markdown('<p class="section-header">7-Day Risk Forecast</p>', unsafe_allow_html=True)
+        
+        loc = results.get('location', st.session_state.location)
+        if loc:
+            with st.spinner("Loading forecast..."):
+                forecast = fetch_7day_forecast(loc['latitude'], loc['longitude'])
+            
+            if forecast.get('available') and forecast.get('daily'):
+                chart_result = create_forecast_chart(forecast)
+                
+                if chart_result:
+                    chart_data, daily = chart_result
+                    
+                    # Risk level cards for each day
+                    cols = st.columns(7)
+                    for i, day in enumerate(daily):
+                        with cols[i]:
+                            risk_score = day['risk_score']
+                            risk_level = day['risk_level']
+                            
+                            # Color based on risk
+                            if risk_level == 'HIGH':
+                                bg_color = '#fef2f2'
+                                border_color = '#dc2626'
+                                text_color = '#dc2626'
+                            elif risk_level == 'MODERATE':
+                                bg_color = '#fffbeb'
+                                border_color = '#f59e0b'
+                                text_color = '#d97706'
+                            else:
+                                bg_color = '#f0fdf4'
+                                border_color = '#10b981'
+                                text_color = '#059669'
+                            
+                            st.markdown(f"""
+                            <div style="background: {bg_color}; border: 2px solid {border_color}; 
+                                        border-radius: 8px; padding: 0.5rem; text-align: center; margin-bottom: 0.5rem;">
+                                <div style="font-size: 0.7rem; color: #6b7280; font-weight: 500;">{day['date_formatted']}</div>
+                                <div style="font-size: 1.1rem; font-weight: 700; color: {text_color};">{risk_score*100:.0f}%</div>
+                                <div style="font-size: 0.6rem; color: {text_color};">{risk_level}</div>
+                            </div>
+                            """, unsafe_allow_html=True)
+                    
+                    # Expandable details with chart
+                    with st.expander("View detailed forecast"):
+                        # Risk trend chart
+                        st.markdown("**Risk Trend**")
+                        risk_df = pd.DataFrame({
+                            'Day': [d['date_formatted'] for d in daily],
+                            'Risk': [d['risk_score'] * 100 for d in daily]
+                        })
+                        st.bar_chart(risk_df.set_index('Day'))
+                        
+                        # Weather details table
+                        st.markdown("**Weather Factors**")
+                        weather_df = pd.DataFrame({
+                            'Day': [d['date_formatted'] for d in daily],
+                            'Temp Max': [f"{d.get('temp_max', 0):.0f}°C" for d in daily],
+                            'Temp Min': [f"{d.get('temp_min', 0):.0f}°C" for d in daily],
+                            'Snow': [f"{d.get('snowfall', 0):.0f} cm" for d in daily],
+                            'Rain': [f"{d.get('precipitation', 0):.1f} mm" for d in daily],
+                            'Wind': [f"{d.get('wind_max', 0):.0f} km/h" for d in daily],
+                            'Gusts': [f"{d.get('wind_gust', 0):.0f} km/h" for d in daily]
+                        })
+                        st.dataframe(weather_df, hide_index=True, use_container_width=True)
+                        
+                        st.caption("Risk forecast based on temperature, snowfall, wind, and radiation predictions from Open-Meteo.")
+            else:
+                st.info("Forecast data not available for this location")
+        
+        # ============================================
+        # WIND LOADING ANALYSIS DISPLAY
+        # ============================================
+        if st.session_state.wind_loading_results and st.session_state.wind_loading_results.get('wind_analysis'):
+            wind_results = st.session_state.wind_loading_results
+            wind_data = wind_results['wind_data']
+            wind_analysis = wind_results['wind_analysis']
+            wind_speed = wind_results['wind_speed']
+            loc = wind_results['location']
+            lat = loc['latitude']
+            lon = loc['longitude']
+            
+            st.markdown('<p class="section-header">Wind Loading Zones</p>', unsafe_allow_html=True)
+            
+            # Display wind metrics
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                st.metric("Wind From", f"{wind_analysis['wind_direction_cardinal']}")
+            with col2:
+                st.metric("Wind Speed", f"{wind_speed:.1f} m/s")
+            with col3:
+                st.metric("Loading Risk", wind_analysis['loading_risk'])
+            with col4:
+                max_gust = wind_data.get('current_gusts') or wind_data.get('max_speed_24h', 0)
+                st.metric("Gusts", f"{max_gust:.1f} m/s")
+            
+            # Risk display
+            loading_risk = wind_analysis['loading_risk']
+            risk_colors = {
+                'EXTREME': ('#fef2f2', '#dc2626'),
+                'HIGH': ('#fef2f2', '#dc2626'),
+                'MODERATE': ('#fffbeb', '#f59e0b'),
+                'LOW': ('#f0fdf4', '#10b981')
+            }
+            bg_color, border_color = risk_colors.get(loading_risk, ('#f9fafb', '#6b7280'))
+            
+            st.markdown(f"""
+            <div style="background: {bg_color}; 
+                        border-left: 4px solid {border_color};
+                        padding: 1rem; border-radius: 0 8px 8px 0; margin: 1rem 0;">
+                <strong>Wind Loading: {loading_risk}</strong><br>
+                <span style="font-size: 0.9rem;">
+                    Wind from <strong>{wind_analysis['wind_direction_cardinal']}</strong> ({wind_analysis['wind_direction']}°)<br>
+                    Danger slopes (leeward): <strong>{wind_analysis['leeward_cardinal']}</strong> facing
+                </span>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            # Aspect recommendations
+            col1, col2 = st.columns(2)
+            with col1:
+                st.markdown("**Avoid (Wind Loaded):**")
+                leeward = wind_analysis.get('leeward_aspects', [])
+                cross = wind_analysis.get('cross_load_aspects', [])
+                if leeward:
+                    st.markdown(f"🔴 Leeward: {', '.join(leeward)}")
+                if cross:
+                    st.markdown(f"🟠 Cross-loaded: {', '.join(cross)}")
+                if not leeward and not cross:
+                    st.markdown("• Light winds - minimal loading")
+            
+            with col2:
+                st.markdown("**Prefer (Windward/Safe):**")
+                safe = wind_analysis.get('safe_aspects', [])
+                if safe:
+                    st.markdown(f"🟢 {', '.join(safe)}")
+                else:
+                    st.markdown("• All aspects similar risk")
+            
+            # Wind loading map
+            with st.expander("View Wind Loading Zones on Map"):
+                wind_map = folium.Map(
+                    location=[lat, lon],
+                    zoom_start=13,
+                    tiles='OpenStreetMap'
+                )
+                
+                # Add terrain layer
+                folium.TileLayer(
+                    tiles='https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
+                    attr='OpenTopoMap',
+                    name='Terrain',
+                    overlay=False
+                ).add_to(wind_map)
+                
+                # Add wind loading overlays
+                overlays = create_wind_loading_overlay(lat, lon, wind_analysis, radius_km=2)
+                for name, overlay in overlays:
+                    overlay.add_to(wind_map)
+                
+                # Center marker
+                folium.Marker(
+                    [lat, lon],
+                    popup=f"Analysis Point<br>Elevation: {loc.get('elevation', 'N/A')}m",
+                    icon=folium.Icon(color='blue', icon='info-sign')
+                ).add_to(wind_map)
+                
+                folium.LayerControl().add_to(wind_map)
+                
+                st.markdown("""
+                <div style="font-size: 0.8rem; color: #6b7280; margin-bottom: 0.5rem;">
+                    <strong>Legend:</strong> 
+                    <span style="color: #dc2626;">■</span> Leeward (High Risk) · 
+                    <span style="color: #f59e0b;">■</span> Cross-loaded (Moderate) · 
+                    <span style="color: #10b981;">■</span> Windward (Lower Risk) · 
+                    <span style="color: #1f2937;">→</span> Wind Direction
+                </div>
+                """, unsafe_allow_html=True)
+                
+                st_folium(wind_map, width=None, height=400, key="single_point_wind_map_top")
+            
+            # Detailed recommendations
+            with st.expander("Wind Loading Details"):
+                st.markdown("**How Wind Loading Creates Avalanche Danger:**")
+                st.markdown("""
+                Wind transports loose snow and deposits it on **leeward** (downwind) slopes, 
+                creating dense, cohesive **wind slabs** that can release as avalanches.
+                
+                - **Leeward slopes** (facing away from wind): Highest accumulation, greatest danger
+                - **Cross-loaded slopes** (perpendicular to wind): Moderate accumulation risk
+                - **Windward slopes** (facing into wind): Usually scoured, relatively safer
+                """)
+                
+                if wind_analysis.get('recommendations'):
+                    st.markdown("**Current Conditions:**")
+                    for rec in wind_analysis['recommendations']:
+                        st.markdown(f"• {rec}")
+                
+                # 24h wind history
+                if wind_data.get('avg_speed_24h'):
+                    st.markdown(f"""
+                    **24-Hour Wind Summary:**
+                    - Average speed: {wind_data['avg_speed_24h']:.1f} m/s
+                    - Maximum speed: {wind_data.get('max_speed_24h', 0):.1f} m/s
+                    - Predominant direction: {get_cardinal_direction(wind_data.get('avg_direction_24h', 0))}
+                    """)
+        elif st.session_state.wind_loading_results and not st.session_state.wind_loading_results.get('wind_analysis'):
+            st.info("Wind data not available for this location")
+    
     st.markdown("")  # Spacing
     
     # Set location from map click
@@ -4735,289 +5005,6 @@ if analysis_mode == "📍 Single Point":
                 st.session_state.wind_loading_results = {'available': False}
         
         st.rerun()  # Rerun to display results from session state
-
-    # ============================================
-    # DISPLAY ASSESSMENT RESULTS (from session state)
-    # ============================================
-    if st.session_state.assessment_results:
-        results = st.session_state.assessment_results
-        
-        st.markdown("")  # Spacing
-        
-        col1, col2 = st.columns([1, 2])
-        
-        with col1:
-            st.markdown(f"""
-            <div class="risk-card {results['risk_class']}">
-                <div class="risk-label">Avalanche Risk</div>
-                <div class="risk-level">{results['risk_level']}</div>
-                <div class="risk-confidence">{results['avalanche_probability']*100:.0f}% probability</div>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            # Show model confidence separately
-            confidence_label = "High" if results['model_confidence'] >= 0.7 else "Medium" if results['model_confidence'] >= 0.4 else "Low"
-            st.caption(f"{results['risk_message']} • Model confidence: {confidence_label}")
-        
-        # Key factors
-        st.markdown('<p class="section-header">Contributing Factors</p>', unsafe_allow_html=True)
-        col1, col2, col3, col4 = st.columns(4)
-        
-        with col1:
-            st.metric("Stability", f"{results['stability']:.2f}")
-        with col2:
-            st.metric("Temperature", f"{results['temperature']:.1f}°C")
-        with col3:
-            st.metric("Snow Depth", f"{results['snow_depth']:.2f}m")
-        with col4:
-            st.metric("Radiation", f"{results['radiation']:.0f} W/m²")
-        
-        # Recommendations
-        st.markdown('<p class="section-header">Recommendations</p>', unsafe_allow_html=True)
-        
-        prob = results['avalanche_probability']
-        if prob >= 0.7:
-            st.markdown("""
-            <div class="warning-box">
-                <strong>High Risk Actions:</strong><br>
-                • Avoid all avalanche terrain<br>
-                • Do not travel on or below steep slopes<br>
-                • Check local avalanche advisories<br>
-                • Consider postponing backcountry travel
-            </div>
-            """, unsafe_allow_html=True)
-        elif prob >= 0.4:
-            st.markdown("""
-            <div class="warning-box">
-                <strong>Moderate Risk Actions:</strong><br>
-                • Use caution in avalanche terrain<br>
-                • Carry avalanche safety equipment<br>
-                • Travel with partners<br>
-                • Identify safe zones and escape routes
-            </div>
-            """, unsafe_allow_html=True)
-        else:
-            st.markdown("""
-            <div class="info-box">
-                <strong>Lower Risk Actions:</strong><br>
-                • Conditions appear more stable<br>
-                • Still carry avalanche safety gear<br>
-                • Remain vigilant for changing conditions<br>
-                • Check for updated forecasts
-            </div>
-            """, unsafe_allow_html=True)
-        
-        # ============================================
-        # 7-DAY RISK FORECAST
-        # ============================================
-        st.markdown('<p class="section-header">7-Day Risk Forecast</p>', unsafe_allow_html=True)
-        
-        loc = results.get('location', st.session_state.location)
-        if loc:
-            with st.spinner("Loading forecast..."):
-                forecast = fetch_7day_forecast(loc['latitude'], loc['longitude'])
-            
-            if forecast.get('available') and forecast.get('daily'):
-                chart_result = create_forecast_chart(forecast)
-                
-                if chart_result:
-                    chart_data, daily = chart_result
-                    
-                    # Risk level cards for each day
-                    cols = st.columns(7)
-                    for i, day in enumerate(daily):
-                        with cols[i]:
-                            risk_score = day['risk_score']
-                            risk_level = day['risk_level']
-                            
-                            # Color based on risk
-                            if risk_level == 'HIGH':
-                                bg_color = '#fef2f2'
-                                border_color = '#dc2626'
-                                text_color = '#dc2626'
-                            elif risk_level == 'MODERATE':
-                                bg_color = '#fffbeb'
-                                border_color = '#f59e0b'
-                                text_color = '#d97706'
-                            else:
-                                bg_color = '#f0fdf4'
-                                border_color = '#10b981'
-                                text_color = '#059669'
-                            
-                            st.markdown(f"""
-                            <div style="background: {bg_color}; border: 2px solid {border_color}; 
-                                        border-radius: 8px; padding: 0.5rem; text-align: center; margin-bottom: 0.5rem;">
-                                <div style="font-size: 0.7rem; color: #6b7280; font-weight: 500;">{day['date_formatted']}</div>
-                                <div style="font-size: 1.1rem; font-weight: 700; color: {text_color};">{risk_score*100:.0f}%</div>
-                                <div style="font-size: 0.6rem; color: {text_color};">{risk_level}</div>
-                            </div>
-                            """, unsafe_allow_html=True)
-                    
-                    # Expandable details with chart
-                    with st.expander("View detailed forecast"):
-                        # Risk trend chart
-                        st.markdown("**Risk Trend**")
-                        risk_df = pd.DataFrame({
-                            'Day': [d['date_formatted'] for d in daily],
-                            'Risk': [d['risk_score'] * 100 for d in daily]
-                        })
-                        st.bar_chart(risk_df.set_index('Day'))
-                        
-                        # Weather details table
-                        st.markdown("**Weather Factors**")
-                        weather_df = pd.DataFrame({
-                            'Day': [d['date_formatted'] for d in daily],
-                            'Temp Max': [f"{d.get('temp_max', 0):.0f}°C" for d in daily],
-                            'Temp Min': [f"{d.get('temp_min', 0):.0f}°C" for d in daily],
-                            'Snow': [f"{d.get('snowfall', 0):.0f} cm" for d in daily],
-                            'Rain': [f"{d.get('precipitation', 0):.1f} mm" for d in daily],
-                            'Wind': [f"{d.get('wind_max', 0):.0f} km/h" for d in daily],
-                            'Gusts': [f"{d.get('wind_gust', 0):.0f} km/h" for d in daily]
-                        })
-                        st.dataframe(weather_df, hide_index=True, use_container_width=True)
-                        
-                        st.caption("Risk forecast based on temperature, snowfall, wind, and radiation predictions from Open-Meteo.")
-            else:
-                st.info("Forecast data not available for this location")
-        
-        # ============================================
-        # WIND LOADING ANALYSIS DISPLAY (from session state)
-        # ============================================
-        if st.session_state.wind_loading_results and st.session_state.wind_loading_results.get('wind_analysis'):
-            wind_results = st.session_state.wind_loading_results
-            wind_data = wind_results['wind_data']
-            wind_analysis = wind_results['wind_analysis']
-            wind_speed = wind_results['wind_speed']
-            loc = wind_results['location']
-            lat = loc['latitude']
-            lon = loc['longitude']
-            
-            st.markdown('<p class="section-header">Wind Loading Zones</p>', unsafe_allow_html=True)
-            
-            # Display wind metrics
-            col1, col2, col3, col4 = st.columns(4)
-            with col1:
-                st.metric("Wind From", f"{wind_analysis['wind_direction_cardinal']}")
-            with col2:
-                st.metric("Wind Speed", f"{wind_speed:.1f} m/s")
-            with col3:
-                st.metric("Loading Risk", wind_analysis['loading_risk'])
-            with col4:
-                max_gust = wind_data.get('current_gusts') or wind_data.get('max_speed_24h', 0)
-                st.metric("Gusts", f"{max_gust:.1f} m/s")
-            
-            # Risk display
-            loading_risk = wind_analysis['loading_risk']
-            risk_colors = {
-                'EXTREME': ('#fef2f2', '#dc2626'),
-                'HIGH': ('#fef2f2', '#dc2626'),
-                'MODERATE': ('#fffbeb', '#f59e0b'),
-                'LOW': ('#f0fdf4', '#10b981')
-            }
-            bg_color, border_color = risk_colors.get(loading_risk, ('#f9fafb', '#6b7280'))
-            
-            st.markdown(f"""
-            <div style="background: {bg_color}; 
-                        border-left: 4px solid {border_color};
-                        padding: 1rem; border-radius: 0 8px 8px 0; margin: 1rem 0;">
-                <strong>Wind Loading: {loading_risk}</strong><br>
-                <span style="font-size: 0.9rem;">
-                    Wind from <strong>{wind_analysis['wind_direction_cardinal']}</strong> ({wind_analysis['wind_direction']}°)<br>
-                    Danger slopes (leeward): <strong>{wind_analysis['leeward_cardinal']}</strong> facing
-                </span>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            # Aspect recommendations
-            col1, col2 = st.columns(2)
-            with col1:
-                st.markdown("**Avoid (Wind Loaded):**")
-                leeward = wind_analysis.get('leeward_aspects', [])
-                cross = wind_analysis.get('cross_load_aspects', [])
-                if leeward:
-                    st.markdown(f"🔴 Leeward: {', '.join(leeward)}")
-                if cross:
-                    st.markdown(f"🟠 Cross-loaded: {', '.join(cross)}")
-                if not leeward and not cross:
-                    st.markdown("• Light winds - minimal loading")
-            
-            with col2:
-                st.markdown("**Prefer (Windward/Safe):**")
-                safe = wind_analysis.get('safe_aspects', [])
-                if safe:
-                    st.markdown(f"🟢 {', '.join(safe)}")
-                else:
-                    st.markdown("• All aspects similar risk")
-            
-            # Wind loading map
-            with st.expander("View Wind Loading Zones on Map"):
-                wind_map = folium.Map(
-                    location=[lat, lon],
-                    zoom_start=13,
-                    tiles='OpenStreetMap'
-                )
-                
-                # Add terrain layer
-                folium.TileLayer(
-                    tiles='https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
-                    attr='OpenTopoMap',
-                    name='Terrain',
-                    overlay=False
-                ).add_to(wind_map)
-                
-                # Add wind loading overlays
-                overlays = create_wind_loading_overlay(lat, lon, wind_analysis, radius_km=2)
-                for name, overlay in overlays:
-                    overlay.add_to(wind_map)
-                
-                # Center marker
-                folium.Marker(
-                    [lat, lon],
-                    popup=f"Analysis Point<br>Elevation: {loc.get('elevation', 'N/A')}m",
-                    icon=folium.Icon(color='blue', icon='info-sign')
-                ).add_to(wind_map)
-                
-                folium.LayerControl().add_to(wind_map)
-                
-                st.markdown("""
-                <div style="font-size: 0.8rem; color: #6b7280; margin-bottom: 0.5rem;">
-                    <strong>Legend:</strong> 
-                    <span style="color: #dc2626;">■</span> Leeward (High Risk) · 
-                    <span style="color: #f59e0b;">■</span> Cross-loaded (Moderate) · 
-                    <span style="color: #10b981;">■</span> Windward (Lower Risk) · 
-                    <span style="color: #1f2937;">→</span> Wind Direction
-                </div>
-                """, unsafe_allow_html=True)
-                
-                st_folium(wind_map, width=None, height=400, key="single_point_wind_map")
-            
-            # Detailed recommendations
-            with st.expander("Wind Loading Details"):
-                st.markdown("**How Wind Loading Creates Avalanche Danger:**")
-                st.markdown("""
-                Wind transports loose snow and deposits it on **leeward** (downwind) slopes, 
-                creating dense, cohesive **wind slabs** that can release as avalanches.
-                
-                - **Leeward slopes** (facing away from wind): Highest accumulation, greatest danger
-                - **Cross-loaded slopes** (perpendicular to wind): Moderate accumulation risk
-                - **Windward slopes** (facing into wind): Usually scoured, relatively safer
-                """)
-                
-                if wind_analysis.get('recommendations'):
-                    st.markdown("**Current Conditions:**")
-                    for rec in wind_analysis['recommendations']:
-                        st.markdown(f"• {rec}")
-                
-                # 24h wind history
-                if wind_data.get('avg_speed_24h'):
-                    st.markdown(f"""
-                    **24-Hour Wind Summary:**
-                    - Average speed: {wind_data['avg_speed_24h']:.1f} m/s
-                    - Maximum speed: {wind_data.get('max_speed_24h', 0):.1f} m/s
-                    - Predominant direction: {get_cardinal_direction(wind_data.get('avg_direction_24h', 0))}
-                    """)
-        elif st.session_state.wind_loading_results and not st.session_state.wind_loading_results.get('wind_analysis'):
-            st.info("Wind data not available for this location")
 
 # Footer
 st.markdown("")
