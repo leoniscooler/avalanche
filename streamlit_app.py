@@ -3701,93 +3701,85 @@ else:
     # Location selection
     st.markdown('<p class="section-header">Location</p>', unsafe_allow_html=True)
 
-    data_source = st.radio(
-        "Data input method",
-        ["Automatic (satellite data)", "Manual entry"],
-        horizontal=True,
-        label_visibility="collapsed"
+    # Auto-detect location button
+    col_auto1, col_auto2, col_auto3 = st.columns([1, 2, 1])
+    with col_auto2:
+        if st.button("Auto-detect my location", type="secondary", use_container_width=True):
+            with st.spinner("Detecting location..."):
+                detected_ip = get_ip_address()
+                if detected_ip:
+                    st.session_state.user_ip = detected_ip
+                    location_data = get_user_location(detected_ip)
+                    if location_data:
+                        st.session_state.location = location_data
+                        st.session_state.map_clicked_lat = location_data['latitude']
+                        st.session_state.map_clicked_lon = location_data['longitude']
+                        st.session_state.location['elevation'] = get_elevation(
+                            location_data['latitude'], 
+                            location_data['longitude']
+                        )
+                        # Clear old data
+                        st.session_state.satellite_raw = None
+                        st.session_state.env_data = None
+                        st.session_state.assessment_results = None
+                        st.session_state.wind_loading_results = None
+                        st.rerun()
+                else:
+                    st.error("Could not detect location. Please select on the map.")
+    
+    st.markdown("")
+    st.markdown("Or click anywhere on the map to set your location:")
+    
+    # Default to Alps region
+    default_lat = st.session_state.get('map_clicked_lat') or 46.8
+    default_lon = st.session_state.get('map_clicked_lon') or 9.8
+    
+    # Create interactive map
+    m = folium.Map(
+        location=[default_lat, default_lon],
+        zoom_start=6,
+        tiles='OpenStreetMap'
     )
-
-    if data_source == "Automatic (satellite data)":
-        
-        # Location selection tabs
-        location_tab = st.radio(
-            "Select location method",
-            ["Use my IP address", "Select on map"],
-            horizontal=True,
-            label_visibility="collapsed"
-        )
-        
-        if location_tab == "Use my IP address":
-            st.markdown('<div class="info-box">Your IP address will be used only to determine your approximate location. No data is stored.</div>', unsafe_allow_html=True)
-            
-            if st.button("Detect my location", type="primary"):
-                with st.spinner("Detecting location..."):
-                    detected_ip = get_ip_address()
-                    if detected_ip:
-                        st.session_state.user_ip = detected_ip
-                        st.session_state.ip_consent = True
-                    else:
-                        st.error("Could not detect location. Please use map selection instead.")
-            
-            if st.session_state.user_ip and st.session_state.ip_consent:
-                st.success(f"Location detected from IP: {st.session_state.user_ip}")
-        
-        else:  # Select on map
-            st.session_state.ip_consent = True
-        
-        st.markdown("Click anywhere on the map to set your location:")
-        
-        # Default to Alps region
-        default_lat = st.session_state.get('map_clicked_lat') or 46.8
-        default_lon = st.session_state.get('map_clicked_lon') or 9.8
-        
-        # Create interactive map
-        m = folium.Map(
-            location=[default_lat, default_lon],
-            zoom_start=6,
-            tiles='OpenStreetMap'
-        )
-        
-        # Add satellite layer
-        folium.TileLayer(
-            tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-            attr='Esri',
-            name='Satellite',
-            overlay=False
+    
+    # Add satellite layer
+    folium.TileLayer(
+        tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+        attr='Esri',
+        name='Satellite',
+        overlay=False
+    ).add_to(m)
+    
+    # Add terrain layer
+    folium.TileLayer(
+        tiles='https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
+        attr='OpenTopoMap',
+        name='Terrain',
+        overlay=False
+    ).add_to(m)
+    
+    folium.LayerControl().add_to(m)
+    
+    # Add marker if location selected
+    if st.session_state.get('map_clicked_lat'):
+        folium.Marker(
+            [st.session_state.map_clicked_lat, st.session_state.map_clicked_lon],
+            popup=f"Lat: {st.session_state.map_clicked_lat:.4f}, Lon: {st.session_state.map_clicked_lon:.4f}",
+            icon=folium.Icon(color='red', icon='map-marker', prefix='fa')
         ).add_to(m)
-        
-        # Add terrain layer
-        folium.TileLayer(
-            tiles='https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
-            attr='OpenTopoMap',
-            name='Terrain',
-            overlay=False
-        ).add_to(m)
-        
-        folium.LayerControl().add_to(m)
-        
-        # Add marker if location selected
-        if st.session_state.get('map_clicked_lat'):
-            folium.Marker(
-                [st.session_state.map_clicked_lat, st.session_state.map_clicked_lon],
-                popup=f"Lat: {st.session_state.map_clicked_lat:.4f}, Lon: {st.session_state.map_clicked_lon:.4f}",
-                icon=folium.Icon(color='red', icon='map-marker', prefix='fa')
-            ).add_to(m)
-        
-        # Display map
-        map_data = st_folium(m, width=700, height=350, key="main_location_map", returned_objects=["last_clicked"])
-        
-        if map_data and map_data.get('last_clicked'):
-            st.session_state.map_clicked_lat = map_data['last_clicked']['lat']
-            st.session_state.map_clicked_lon = map_data['last_clicked']['lng']
-        
-        if st.session_state.get('map_clicked_lat'):
-            st.success(f"Selected: {st.session_state.map_clicked_lat:.4f}°N, {st.session_state.map_clicked_lon:.4f}°E")
+    
+    # Display map
+    map_data = st_folium(m, width=700, height=350, key="main_location_map", returned_objects=["last_clicked"])
+    
+    if map_data and map_data.get('last_clicked'):
+        st.session_state.map_clicked_lat = map_data['last_clicked']['lat']
+        st.session_state.map_clicked_lon = map_data['last_clicked']['lng']
+    
+    if st.session_state.get('map_clicked_lat'):
+        st.success(f"Selected: {st.session_state.map_clicked_lat:.4f}°N, {st.session_state.map_clicked_lon:.4f}°E")
     
     st.markdown("")  # Spacing
     
-    # Set location from map click (works regardless of which tab is selected)
+    # Set location from map click
     if st.session_state.get('map_clicked_lat'):
         if st.session_state.location is None or \
            st.session_state.location.get('latitude') != st.session_state.map_clicked_lat or \
@@ -3805,15 +3797,6 @@ else:
             st.session_state.env_data = None
             st.session_state.assessment_results = None
             st.session_state.wind_loading_results = None
-    
-    # Set location from IP (if that tab is selected and no map click yet)
-    if location_tab == "Use my IP address" and st.session_state.user_ip and st.session_state.ip_consent:
-        if st.session_state.location is None:
-            with st.spinner("Getting location from IP..."):
-                st.session_state.location = get_user_location(st.session_state.user_ip)
-                lat = st.session_state.location['latitude']
-                lon = st.session_state.location['longitude']
-                st.session_state.location['elevation'] = get_elevation(lat, lon)
     
     # Display location info
     if st.session_state.location:
