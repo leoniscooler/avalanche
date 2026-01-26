@@ -4090,36 +4090,24 @@ else:
     # Location selection
     st.markdown('<p class="section-header">Location</p>', unsafe_allow_html=True)
 
-    # Auto-detect location button with HTML5 Geolocation API
-    # Initialize geolocation state
-    if 'geo_coords_received' not in st.session_state:
-        st.session_state.geo_coords_received = None
-    
-    col_btn, col_status = st.columns([1, 2])
-    
-    with col_btn:
-        detect_btn = st.button("📍 Auto-Detect My Location", type="primary", use_container_width=True)
-    
-    # Hidden input to receive coordinates from JavaScript
-    geo_input = st.text_input("geo_coords", key="geo_coords_input", label_visibility="collapsed", 
-                               placeholder="Coordinates will appear here...")
-    
-    # Process coordinates if received
-    if geo_input and ',' in geo_input and geo_input != st.session_state.geo_coords_received:
+    # Check for geolocation coordinates in URL query params (auto-submitted by JavaScript)
+    query_params = st.query_params
+    if 'geo_lat' in query_params and 'geo_lon' in query_params:
         try:
-            parts = geo_input.split(',')
-            if len(parts) >= 2:
-                lat = float(parts[0].strip())
-                lon = float(parts[1].strip())
-                
-                if -90 <= lat <= 90 and -180 <= lon <= 180:
-                    st.session_state.geo_coords_received = geo_input
-                    st.session_state.map_clicked_lat = lat
-                    st.session_state.map_clicked_lon = lon
+            geo_lat = float(query_params['geo_lat'])
+            geo_lon = float(query_params['geo_lon'])
+            
+            if -90 <= geo_lat <= 90 and -180 <= geo_lon <= 180:
+                # Only update if different from current location
+                if (st.session_state.get('map_clicked_lat') != geo_lat or 
+                    st.session_state.get('map_clicked_lon') != geo_lon):
+                    
+                    st.session_state.map_clicked_lat = geo_lat
+                    st.session_state.map_clicked_lon = geo_lon
                     
                     # Create location from coordinates
-                    st.session_state.location = create_location_from_coords(lat, lon)
-                    st.session_state.location['elevation'] = get_elevation(lat, lon)
+                    st.session_state.location = create_location_from_coords(geo_lat, geo_lon)
+                    st.session_state.location['elevation'] = get_elevation(geo_lat, geo_lon)
                     st.session_state.location['source'] = 'GPS/Browser Geolocation'
                     
                     # Clear old data
@@ -4128,65 +4116,75 @@ else:
                     st.session_state.assessment_results = None
                     st.session_state.wind_loading_results = None
                     
-                    st.success(f"✅ Location detected and set: {lat:.4f}°, {lon:.4f}°")
+                    # Clear the query params and rerun
+                    st.query_params.clear()
+                    st.success(f"✅ Location automatically detected: {geo_lat:.4f}°, {geo_lon:.4f}°")
                     st.rerun()
-        except (ValueError, IndexError):
+        except (ValueError, TypeError):
             pass
     
-    # JavaScript for HTML5 Geolocation - runs when button is clicked
+    # Auto-detect location button
+    detect_btn = st.button("📍 Auto-Detect My Location", type="primary")
+    
+    # JavaScript for HTML5 Geolocation - auto-redirects with coordinates in URL
     if detect_btn:
         geolocation_js = """
         <script>
         (function() {
-            // Find the text input for coordinates
-            const inputs = parent.document.querySelectorAll('input[type="text"]');
-            let coordInput = null;
-            for (let input of inputs) {
-                if (input.placeholder && input.placeholder.includes('Coordinates')) {
-                    coordInput = input;
-                    break;
-                }
-            }
+            const statusEl = document.getElementById('geo-status-text');
             
             if (navigator.geolocation) {
                 navigator.geolocation.getCurrentPosition(
                     function(position) {
-                        const lat = position.coords.latitude;
-                        const lon = position.coords.longitude;
+                        const lat = position.coords.latitude.toFixed(6);
+                        const lon = position.coords.longitude.toFixed(6);
                         
-                        if (coordInput) {
-                            // Set value and trigger React's onChange
-                            const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-                            nativeInputValueSetter.call(coordInput, lat.toFixed(6) + ',' + lon.toFixed(6));
-                            coordInput.dispatchEvent(new Event('input', { bubbles: true }));
-                            
-                            // Also try to trigger change event
-                            coordInput.dispatchEvent(new Event('change', { bubbles: true }));
-                        }
+                        statusEl.innerHTML = '✅ Location found! Updating map...';
+                        statusEl.style.color = '#059669';
+                        
+                        // Redirect with coordinates in URL - Streamlit will pick these up
+                        const currentUrl = new URL(window.parent.location.href);
+                        currentUrl.searchParams.set('geo_lat', lat);
+                        currentUrl.searchParams.set('geo_lon', lon);
+                        
+                        // Small delay for user to see success message
+                        setTimeout(function() {
+                            window.parent.location.href = currentUrl.toString();
+                        }, 500);
                     },
                     function(error) {
-                        let msg = 'Location error: ';
+                        let msg = '❌ ';
                         switch(error.code) {
-                            case error.PERMISSION_DENIED: msg += 'Permission denied'; break;
-                            case error.POSITION_UNAVAILABLE: msg += 'Position unavailable'; break;
-                            case error.TIMEOUT: msg += 'Request timed out'; break;
-                            default: msg += 'Unknown error';
+                            case error.PERMISSION_DENIED: 
+                                msg += 'Permission denied. Please allow location access in your browser.'; 
+                                break;
+                            case error.POSITION_UNAVAILABLE: 
+                                msg += 'Position unavailable. Please click on the map instead.'; 
+                                break;
+                            case error.TIMEOUT: 
+                                msg += 'Request timed out. Please try again.'; 
+                                break;
+                            default: 
+                                msg += 'Could not get location. Please click on the map.';
                         }
-                        alert(msg + '. Please click on the map to select your location.');
+                        statusEl.innerHTML = msg;
+                        statusEl.style.color = '#dc2626';
                     },
                     { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
                 );
             } else {
-                alert('Geolocation not supported. Please click on the map to select your location.');
+                statusEl.innerHTML = '❌ Geolocation not supported. Please click on the map.';
+                statusEl.style.color = '#dc2626';
             }
         })();
         </script>
-        <div style="padding: 10px; background: #e0f2fe; border-radius: 8px; text-align: center;">
-            <span style="color: #0369a1;">📍 Requesting location... Please allow access when prompted.</span>
+        <div style="padding: 12px; background: linear-gradient(135deg, #e0f2fe 0%, #f0f9ff 100%); border-radius: 10px; margin: 10px 0; border: 1px solid #bae6fd; display: flex; align-items: center; gap: 12px;">
+            <div style="width: 24px; height: 24px; border: 3px solid #0ea5e9; border-top-color: transparent; border-radius: 50%; animation: spin 1s linear infinite;"></div>
+            <span id="geo-status-text" style="color: #0369a1; font-weight: 500;">📍 Requesting your location...</span>
         </div>
+        <style>@keyframes spin { to { transform: rotate(360deg); } }</style>
         """
-        st.components.v1.html(geolocation_js, height=60)
-        st.info("👆 If coordinates appear in the box above, press Enter or click outside the box to apply them.")
+        st.components.v1.html(geolocation_js, height=70)
     
     st.markdown("")
     st.caption("Or click anywhere on the map to set your location:")
