@@ -3565,6 +3565,15 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
+# Mobile viewport meta tag for proper scaling
+st.markdown("""
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#1f2937">
+""", unsafe_allow_html=True)
+
 # Clean, professional CSS with mobile responsiveness
 st.markdown("""
 <style>
@@ -3988,6 +3997,173 @@ st.markdown("""
         .stCheckbox > label {
             padding: 0.5rem !important;
             min-height: 44px;
+        }
+    }
+    
+    /* ===== ENHANCED MOBILE STYLES ===== */
+    
+    /* Tabs - scrollable on mobile */
+    @media screen and (max-width: 768px) {
+        .stTabs [data-baseweb="tab-list"] {
+            gap: 0 !important;
+            overflow-x: auto !important;
+            flex-wrap: nowrap !important;
+            -webkit-overflow-scrolling: touch;
+            scrollbar-width: none;
+            -ms-overflow-style: none;
+        }
+        
+        .stTabs [data-baseweb="tab-list"]::-webkit-scrollbar {
+            display: none;
+        }
+        
+        .stTabs [data-baseweb="tab"] {
+            flex-shrink: 0 !important;
+            padding: 0.5rem 0.75rem !important;
+            font-size: 0.75rem !important;
+            white-space: nowrap !important;
+        }
+        
+        /* Form inputs */
+        .stForm {
+            padding: 0.5rem !important;
+        }
+        
+        /* Columns - ensure proper stacking */
+        [data-testid="stHorizontalBlock"] {
+            flex-wrap: wrap !important;
+            gap: 0.5rem !important;
+        }
+        
+        /* Cards and styled divs */
+        div[style*="border-radius"] {
+            padding: 0.75rem !important;
+        }
+        
+        /* Sidebar adjustments */
+        [data-testid="stSidebar"] {
+            width: 280px !important;
+        }
+        
+        [data-testid="stSidebar"] [data-testid="stExpander"] {
+            margin-bottom: 0.5rem !important;
+        }
+        
+        /* Reduce font sizes for inline styled elements */
+        div[style*="font-size: 2rem"] {
+            font-size: 1.5rem !important;
+        }
+        
+        div[style*="font-size: 1.5rem"] {
+            font-size: 1.25rem !important;
+        }
+        
+        /* Smaller badges/pills */
+        span[style*="border-radius: 9999px"] {
+            font-size: 0.7rem !important;
+            padding: 0.2rem 0.5rem !important;
+        }
+        
+        /* Maps - full width */
+        [data-testid="stIFrame"] {
+            width: 100% !important;
+        }
+    }
+    
+    @media screen and (max-width: 480px) {
+        /* Even smaller tab text on phones */
+        .stTabs [data-baseweb="tab"] {
+            padding: 0.4rem 0.5rem !important;
+            font-size: 0.65rem !important;
+        }
+        
+        /* Smaller headers */
+        h3, .section-header {
+            font-size: 0.85rem !important;
+        }
+        
+        /* Compact metrics grid */
+        [data-testid="stMetric"] {
+            background: #f9fafb;
+            border-radius: 8px;
+            padding: 0.5rem !important;
+            margin: 0.25rem 0 !important;
+        }
+        
+        /* Sidebar narrower */
+        [data-testid="stSidebar"] {
+            width: 260px !important;
+        }
+        
+        /* Form button full width */
+        .stForm button[type="submit"] {
+            width: 100% !important;
+            min-height: 48px !important;
+        }
+        
+        /* Expander headers */
+        [data-testid="stExpander"] summary {
+            padding: 0.5rem !important;
+            font-size: 0.85rem !important;
+        }
+        
+        /* Windy/iframe embeds */
+        iframe {
+            height: 350px !important;
+        }
+        
+        /* Alternative cards stack better */
+        div[style*="min-height: 180px"],
+        div[style*="min-height: 150px"] {
+            min-height: 120px !important;
+        }
+        
+        /* Q&A history cards */
+        div[style*="padding: 1rem"][style*="border-radius: 12px"] {
+            padding: 0.625rem !important;
+        }
+        
+        /* Smaller gap in flex layouts */
+        div[style*="gap: 1rem"],
+        div[style*="gap: 1.5rem"] {
+            gap: 0.5rem !important;
+        }
+    }
+    
+    /* Safe area insets for notched phones */
+    @supports (padding: max(0px)) {
+        @media screen and (max-width: 480px) {
+            .main .block-container {
+                padding-left: max(0.5rem, env(safe-area-inset-left)) !important;
+                padding-right: max(0.5rem, env(safe-area-inset-right)) !important;
+                padding-bottom: max(1rem, env(safe-area-inset-bottom)) !important;
+            }
+        }
+    }
+    
+    /* Dark mode support for mobile */
+    @media (prefers-color-scheme: dark) {
+        .stApp {
+            color-scheme: dark;
+        }
+    }
+    
+    /* Reduce motion for accessibility */
+    @media (prefers-reduced-motion: reduce) {
+        * {
+            animation: none !important;
+            transition: none !important;
+        }
+    }
+    
+    /* Print styles */
+    @media print {
+        .stButton, [data-testid="stSidebar"], .stTabs {
+            display: none !important;
+        }
+        
+        .risk-card {
+            break-inside: avoid;
         }
     }
 </style>
