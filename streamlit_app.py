@@ -3281,6 +3281,252 @@ def create_forecast_chart(forecast_data):
 
 
 # ============================================
+# NATURAL LANGUAGE RISK SUMMARY
+# ============================================
+def generate_risk_summary(results, env_data, wind_results, location):
+    """Generate a human-readable natural language summary of current conditions."""
+    
+    risk_level = results.get('risk_level', 'UNKNOWN')
+    probability = results.get('avalanche_probability', 0)
+    snow_depth = (results.get('snow_depth') or 0) * 100  # Convert to cm
+    temperature = results.get('temperature') or 0
+    stability = results.get('stability') or 2.5
+    radiation = results.get('radiation') or 0
+    elevation = location.get('elevation') or 0
+    
+    # Wind data
+    wind_speed = 0
+    wind_direction = ""
+    leeward_aspects = []
+    if wind_results and wind_results.get('wind_analysis'):
+        wind_speed = wind_results.get('wind_speed') or 0
+        wind_analysis = wind_results.get('wind_analysis', {})
+        wind_direction = wind_analysis.get('wind_direction_cardinal', '')
+        leeward_aspects = wind_analysis.get('dangerous_aspects', [])
+    
+    # Build the summary
+    summary_parts = []
+    
+    # Opening statement based on risk
+    if risk_level == "NONE":
+        summary_parts.append(f"**No avalanche risk detected** at this location. There is currently no significant snow cover ({snow_depth:.0f}cm) to create avalanche conditions.")
+        return " ".join(summary_parts), []
+    elif risk_level == "HIGH":
+        summary_parts.append(f"**High avalanche danger** is present at this location ({elevation:.0f}m elevation).")
+    elif risk_level == "MODERATE":
+        summary_parts.append(f"**Moderate avalanche conditions** exist at this location ({elevation:.0f}m elevation).")
+    else:
+        summary_parts.append(f"**Conditions appear relatively stable** at this location ({elevation:.0f}m elevation).")
+    
+    # Snow conditions
+    if snow_depth > 0:
+        summary_parts.append(f"The snowpack is currently {snow_depth:.0f}cm deep.")
+    
+    # Key factors list
+    key_factors = []
+    
+    # Temperature analysis
+    if temperature > 0:
+        key_factors.append(f"above-freezing temperatures ({temperature:.1f}°C) causing surface warming")
+        summary_parts.append(f"Above-freezing temperatures ({temperature:.1f}°C) are warming the snow surface, which can weaken the snowpack and increase wet avalanche potential.")
+    elif temperature > -5:
+        key_factors.append(f"near-freezing temperatures ({temperature:.1f}°C)")
+        summary_parts.append(f"Temperatures are near freezing ({temperature:.1f}°C), creating variable snow conditions.")
+    else:
+        summary_parts.append(f"Cold temperatures ({temperature:.1f}°C) are helping preserve the snowpack structure.")
+    
+    # Stability index
+    if stability < 1.0:
+        key_factors.append("very poor snowpack stability")
+        summary_parts.append(f"The stability index ({stability:.2f}) indicates a **very weak snowpack** with high potential for human-triggered avalanches.")
+    elif stability < 1.5:
+        key_factors.append("poor stability conditions")
+        summary_parts.append(f"The stability index ({stability:.2f}) suggests poor stability with moderate triggering potential.")
+    elif stability < 2.0:
+        key_factors.append("moderate stability")
+    
+    # Wind loading
+    if wind_speed > 8 and leeward_aspects:
+        key_factors.append(f"wind loading from the {wind_direction}")
+        aspect_str = ", ".join(leeward_aspects[:3])
+        summary_parts.append(f"Winds from the {wind_direction} at {wind_speed:.1f} m/s are depositing snow on **{aspect_str}-facing slopes**, creating wind slab conditions.")
+    elif wind_speed > 5:
+        summary_parts.append(f"Light winds ({wind_speed:.1f} m/s) from the {wind_direction} may be causing minor snow transport.")
+    
+    # Solar radiation
+    if radiation > 300:
+        key_factors.append("strong solar radiation")
+        summary_parts.append(f"High solar radiation ({radiation:.0f} W/m²) is affecting sun-exposed slopes, particularly south and west-facing terrain.")
+    
+    # Timing recommendation
+    if risk_level == "HIGH":
+        summary_parts.append("**Recommendation:** Avoid avalanche terrain. If travel is necessary, stick to low-angle slopes below 30° and avoid terrain traps.")
+    elif risk_level == "MODERATE":
+        summary_parts.append("**Recommendation:** Use caution in avalanche terrain. Avoid steep slopes with recent wind loading. Travel one at a time in exposed areas and carry rescue equipment.")
+    else:
+        summary_parts.append("**Recommendation:** Standard avalanche precautions advised. Carry rescue gear and maintain awareness of changing conditions.")
+    
+    return " ".join(summary_parts), key_factors
+
+
+# ============================================
+# SAFE ALTERNATIVE SUGGESTIONS
+# ============================================
+def find_safe_alternatives(lat, lon, current_risk, wind_results, radius_km=5):
+    """Find safer alternative locations within a radius."""
+    
+    alternatives = []
+    
+    # Get wind direction to know which aspects are safer
+    safe_aspects = []
+    dangerous_aspects = []
+    wind_direction = 0
+    
+    if wind_results and wind_results.get('wind_analysis'):
+        wind_analysis = wind_results.get('wind_analysis', {})
+        safe_aspects = wind_analysis.get('safe_aspects', [])
+        dangerous_aspects = wind_analysis.get('dangerous_aspects', [])
+        wind_direction = wind_analysis.get('wind_direction', 0)
+    
+    # Define alternative locations based on different terrain features
+    # These are offsets that represent different aspects/terrain
+    terrain_options = [
+        {
+            'name': 'North-facing ridge',
+            'aspect': 'N',
+            'offset': (0.02, 0),  # North
+            'description': 'Shadier aspect, colder snow, often more stable in spring',
+            'angle_range': (337.5, 22.5)
+        },
+        {
+            'name': 'Northeast bowl',
+            'aspect': 'NE', 
+            'offset': (0.015, 0.015),
+            'description': 'Limited sun exposure, moderate wind protection',
+            'angle_range': (22.5, 67.5)
+        },
+        {
+            'name': 'East-facing slope',
+            'aspect': 'E',
+            'offset': (0, 0.02),
+            'description': 'Morning sun, afternoon shade',
+            'angle_range': (67.5, 112.5)
+        },
+        {
+            'name': 'Southeast terrain',
+            'aspect': 'SE',
+            'offset': (-0.015, 0.015),
+            'description': 'Good morning light, moderate afternoon exposure',
+            'angle_range': (112.5, 157.5)
+        },
+        {
+            'name': 'South-facing area',
+            'aspect': 'S',
+            'offset': (-0.02, 0),
+            'description': 'Maximum sun, fastest to stabilize after storms',
+            'angle_range': (157.5, 202.5)
+        },
+        {
+            'name': 'Southwest slope',
+            'aspect': 'SW',
+            'offset': (-0.015, -0.015),
+            'description': 'Afternoon sun exposure',
+            'angle_range': (202.5, 247.5)
+        },
+        {
+            'name': 'West-facing terrain',
+            'aspect': 'W',
+            'offset': (0, -0.02),
+            'description': 'Afternoon sun, morning shade',
+            'angle_range': (247.5, 292.5)
+        },
+        {
+            'name': 'Northwest ridge',
+            'aspect': 'NW',
+            'offset': (0.015, -0.015),
+            'description': 'Limited sun, often wind-affected',
+            'angle_range': (292.5, 337.5)
+        },
+        {
+            'name': 'Lower elevation terrain',
+            'aspect': 'LOW',
+            'offset': (-0.01, -0.01),
+            'description': 'Below treeline, natural terrain anchoring'
+        },
+        {
+            'name': 'Ridge top route',
+            'aspect': 'RIDGE',
+            'offset': (0.008, 0.008),
+            'description': 'Wind-scoured, often less snow accumulation'
+        }
+    ]
+    
+    # Calculate which aspects are windward (safer) vs leeward (dangerous)
+    def is_windward(aspect):
+        """Check if an aspect is windward (facing into the wind)."""
+        if aspect in safe_aspects:
+            return True
+        if aspect in dangerous_aspects:
+            return False
+        return None  # Unknown
+    
+    for terrain in terrain_options:
+        aspect = terrain['aspect']
+        
+        # Calculate risk modifier based on wind loading
+        risk_modifier = 0
+        
+        if aspect in safe_aspects:
+            risk_modifier = -0.15  # Windward = safer
+            safety_reason = "Windward aspect - wind is removing snow, not depositing"
+        elif aspect in dangerous_aspects:
+            risk_modifier = 0.15  # Leeward = more dangerous  
+            safety_reason = "Leeward aspect - wind is depositing snow here"
+        elif aspect == 'LOW':
+            risk_modifier = -0.2  # Lower elevation generally safer
+            safety_reason = "Lower elevation with natural anchoring from trees"
+        elif aspect == 'RIDGE':
+            risk_modifier = -0.1  # Ridge tops often wind-scoured
+            safety_reason = "Ridge top terrain is often wind-scoured"
+        else:
+            safety_reason = terrain['description']
+        
+        # Calculate adjusted risk
+        adjusted_risk = max(0, min(1, current_risk + risk_modifier))
+        
+        # Only suggest if it's safer than current
+        if adjusted_risk < current_risk - 0.05:
+            new_lat = lat + terrain['offset'][0]
+            new_lon = lon + terrain['offset'][1]
+            
+            # Determine risk level
+            if adjusted_risk >= 0.7:
+                level = "HIGH"
+            elif adjusted_risk >= 0.4:
+                level = "MODERATE"
+            else:
+                level = "LOW"
+            
+            alternatives.append({
+                'name': terrain['name'],
+                'aspect': aspect,
+                'lat': new_lat,
+                'lon': new_lon,
+                'estimated_risk': adjusted_risk,
+                'risk_level': level,
+                'risk_reduction': (current_risk - adjusted_risk) * 100,
+                'reason': safety_reason,
+                'description': terrain['description']
+            })
+    
+    # Sort by estimated risk (safest first)
+    alternatives.sort(key=lambda x: x['estimated_risk'])
+    
+    # Return top 3-4 alternatives
+    return alternatives[:4]
+
+
+# ============================================
 # STREAMLIT UI
 # ============================================
 
@@ -4372,6 +4618,138 @@ else:
                 <strong>✓ Lower Risk:</strong> Conditions appear more stable · Still carry safety gear · Stay vigilant
             </div>
             """, unsafe_allow_html=True)
+        
+        # ============================================
+        # NATURAL LANGUAGE SUMMARY
+        # ============================================
+        st.markdown("---")
+        st.markdown("### 📋 Conditions Summary")
+        
+        # Generate the natural language summary
+        summary_text, key_factors = generate_risk_summary(
+            results, 
+            st.session_state.env_data,
+            st.session_state.wind_loading_results,
+            loc
+        )
+        
+        st.markdown(f"""
+        <div style="background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%); 
+                    border-radius: 12px; padding: 1.25rem; margin: 0.5rem 0;
+                    border: 1px solid #e2e8f0; line-height: 1.7;">
+            {summary_text}
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # Key factors pills (if any)
+        if key_factors:
+            st.markdown("**Key Risk Factors:**")
+            factors_html = " ".join([
+                f'<span style="display: inline-block; background: #fef3c7; color: #92400e; '
+                f'padding: 0.25rem 0.75rem; border-radius: 9999px; font-size: 0.8rem; '
+                f'margin: 0.25rem 0.125rem; border: 1px solid #fcd34d;">{factor}</span>'
+                for factor in key_factors
+            ])
+            st.markdown(factors_html, unsafe_allow_html=True)
+        
+        # ============================================
+        # SAFE ALTERNATIVE SUGGESTIONS
+        # ============================================
+        if results['risk_level'] in ['HIGH', 'MODERATE']:
+            st.markdown("---")
+            st.markdown("### 🗺️ Safer Alternative Terrain")
+            st.caption("Based on current wind loading and conditions, these nearby areas may offer lower risk:")
+            
+            alternatives = find_safe_alternatives(
+                loc['latitude'],
+                loc['longitude'],
+                results['avalanche_probability'],
+                st.session_state.wind_loading_results
+            )
+            
+            if alternatives:
+                # Display alternatives in columns
+                cols = st.columns(min(len(alternatives), 4))
+                
+                for i, alt in enumerate(alternatives):
+                    with cols[i % 4]:
+                        # Color based on risk level
+                        if alt['risk_level'] == 'LOW':
+                            card_bg = '#f0fdf4'
+                            card_border = '#10b981'
+                            badge_bg = '#dcfce7'
+                            badge_color = '#166534'
+                        elif alt['risk_level'] == 'MODERATE':
+                            card_bg = '#fffbeb'
+                            card_border = '#f59e0b'
+                            badge_bg = '#fef3c7'
+                            badge_color = '#92400e'
+                        else:
+                            card_bg = '#fef2f2'
+                            card_border = '#ef4444'
+                            badge_bg = '#fee2e2'
+                            badge_color = '#991b1b'
+                        
+                        st.markdown(f"""
+                        <div style="background: {card_bg}; border: 2px solid {card_border}; 
+                                    border-radius: 10px; padding: 1rem; height: 100%; min-height: 180px;">
+                            <div style="font-weight: 600; color: #1f2937; margin-bottom: 0.5rem; font-size: 0.95rem;">
+                                {alt['name']}
+                            </div>
+                            <div style="background: {badge_bg}; color: {badge_color}; 
+                                        display: inline-block; padding: 0.2rem 0.6rem; 
+                                        border-radius: 4px; font-size: 0.75rem; font-weight: 600;
+                                        margin-bottom: 0.5rem;">
+                                {alt['risk_level']} · {alt['estimated_risk']*100:.0f}%
+                            </div>
+                            <div style="font-size: 0.8rem; color: #059669; font-weight: 500; margin-bottom: 0.25rem;">
+                                ↓ {alt['risk_reduction']:.0f}% lower risk
+                            </div>
+                            <div style="font-size: 0.75rem; color: #6b7280; line-height: 1.4;">
+                                {alt['reason']}
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                
+                # Option to view on map
+                with st.expander("🗺️ View alternatives on map"):
+                    alt_map = folium.Map(
+                        location=[loc['latitude'], loc['longitude']],
+                        zoom_start=13,
+                        tiles='OpenTopoMap'
+                    )
+                    
+                    # Current location marker (red)
+                    folium.Marker(
+                        [loc['latitude'], loc['longitude']],
+                        popup=f"Current Location<br>Risk: {results['avalanche_probability']*100:.0f}%",
+                        icon=folium.Icon(color='red', icon='exclamation-triangle', prefix='fa'),
+                        tooltip="Current location (Higher risk)"
+                    ).add_to(alt_map)
+                    
+                    # Alternative location markers
+                    colors = {'LOW': 'green', 'MODERATE': 'orange', 'HIGH': 'red'}
+                    for alt in alternatives:
+                        folium.Marker(
+                            [alt['lat'], alt['lon']],
+                            popup=f"{alt['name']}<br>Risk: {alt['estimated_risk']*100:.0f}%<br>{alt['reason']}",
+                            icon=folium.Icon(color=colors.get(alt['risk_level'], 'blue'), icon='check', prefix='fa'),
+                            tooltip=f"{alt['name']} ({alt['risk_level']})"
+                        ).add_to(alt_map)
+                    
+                    # Draw connections
+                    for alt in alternatives:
+                        folium.PolyLine(
+                            [[loc['latitude'], loc['longitude']], [alt['lat'], alt['lon']]],
+                            color='#6b7280',
+                            weight=1,
+                            opacity=0.5,
+                            dash_array='5, 10'
+                        ).add_to(alt_map)
+                    
+                    st_folium(alt_map, width=None, height=350, key="alternatives_map")
+            else:
+                st.info("Current location already has the lowest risk in the surrounding area.")
         
         st.markdown("---")
         
