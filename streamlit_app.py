@@ -4001,6 +4001,201 @@ if 'dark_mode' not in st.session_state:
 if 'use_imperial' not in st.session_state:
     st.session_state.use_imperial = False
 
+# Initialize user profile for personalized recommendations
+if 'user_profile' not in st.session_state:
+    st.session_state.user_profile = {
+        'experience_level': 'Intermediate',
+        'group_size': 2,
+        'has_beacon': True,
+        'has_shovel': True,
+        'has_probe': True,
+        'has_airbag': False,
+        'risk_tolerance': 'Moderate',
+        'trip_type': 'Ski Touring',
+        'profile_set': False  # Track if user has configured their profile
+    }
+
+# ============================================
+# PERSONAL RISK PROFILE & DECISION SUPPORT
+# ============================================
+def get_experience_modifier(experience_level):
+    """Returns risk threshold modifier based on experience."""
+    modifiers = {
+        'Beginner': {'threshold_increase': 0.15, 'terrain_limit': 25, 'description': 'New to backcountry, learning fundamentals'},
+        'Intermediate': {'threshold_increase': 0.05, 'terrain_limit': 35, 'description': 'Comfortable with basic terrain, some avalanche training'},
+        'Advanced': {'threshold_increase': 0.0, 'terrain_limit': 40, 'description': 'Experienced, completed avalanche courses, good decision-making'},
+        'Expert': {'threshold_increase': -0.05, 'terrain_limit': 45, 'description': 'Professional-level skills, extensive backcountry experience'}
+    }
+    return modifiers.get(experience_level, modifiers['Intermediate'])
+
+def get_gear_score(profile):
+    """Calculate safety gear score (0-100)."""
+    score = 0
+    # Essential trio
+    if profile.get('has_beacon'): score += 35
+    if profile.get('has_shovel'): score += 25
+    if profile.get('has_probe'): score += 20
+    # Bonus gear
+    if profile.get('has_airbag'): score += 20
+    return min(score, 100)
+
+def get_group_risk_factor(group_size):
+    """Assess group risk factor."""
+    if group_size == 1:
+        return {'factor': 1.3, 'warning': 'Solo travel significantly increases risk - no rescue partner', 'color': '#dc2626'}
+    elif group_size == 2:
+        return {'factor': 1.0, 'warning': None, 'color': '#10b981'}
+    elif group_size <= 4:
+        return {'factor': 0.95, 'warning': None, 'color': '#10b981'}
+    else:
+        return {'factor': 1.1, 'warning': 'Large groups may overwhelm slopes - maintain spacing', 'color': '#f59e0b'}
+
+def get_risk_tolerance_adjustment(tolerance):
+    """Get risk tolerance description and adjustments."""
+    tolerances = {
+        'Conservative': {
+            'multiplier': 1.25,
+            'description': 'Prioritize safety margins, avoid borderline situations',
+            'terrain_reduction': 5,
+            'advice_style': 'cautious'
+        },
+        'Moderate': {
+            'multiplier': 1.0,
+            'description': 'Balanced approach to risk management',
+            'terrain_reduction': 0,
+            'advice_style': 'balanced'
+        },
+        'Aggressive': {
+            'multiplier': 0.85,
+            'description': 'Comfortable with higher uncertainty, skilled at risk management',
+            'terrain_reduction': -5,
+            'advice_style': 'direct'
+        }
+    }
+    return tolerances.get(tolerance, tolerances['Moderate'])
+
+def generate_personalized_recommendation(results, env_data, wind_results, profile):
+    """Generate personalized decision support based on user profile and conditions."""
+    
+    if not profile.get('profile_set'):
+        return None, None, None
+    
+    prob = results.get('avalanche_probability', 0)
+    risk_level = results.get('risk_level', 'Unknown')
+    
+    # Get profile factors
+    exp_mod = get_experience_modifier(profile['experience_level'])
+    gear_score = get_gear_score(profile)
+    group_factor = get_group_risk_factor(profile['group_size'])
+    risk_tol = get_risk_tolerance_adjustment(profile['risk_tolerance'])
+    
+    # Calculate personal risk threshold
+    base_threshold = 0.35  # Base "proceed with caution" threshold
+    adjusted_threshold = (base_threshold + exp_mod['threshold_increase']) * risk_tol['multiplier']
+    
+    # Apply group factor to probability
+    effective_prob = prob * group_factor['factor']
+    
+    # Determine decision
+    if effective_prob >= 0.7:
+        decision = 'NO-GO'
+        decision_color = '#dc2626'
+        decision_icon = '🛑'
+    elif effective_prob >= adjusted_threshold + 0.2:
+        decision = 'NOT RECOMMENDED'
+        decision_color = '#ea580c'
+        decision_icon = '⚠️'
+    elif effective_prob >= adjusted_threshold:
+        decision = 'PROCEED WITH CAUTION'
+        decision_color = '#f59e0b'
+        decision_icon = '⚡'
+    else:
+        decision = 'ACCEPTABLE'
+        decision_color = '#10b981'
+        decision_icon = '✓'
+    
+    # Build personalized advice
+    advice_points = []
+    warnings = []
+    
+    # Experience-based advice
+    terrain_limit = exp_mod['terrain_limit'] - risk_tol['terrain_reduction']
+    if profile['experience_level'] == 'Beginner':
+        advice_points.append(f"Stick to slopes under {terrain_limit}° with clear runout zones")
+        if prob >= 0.3:
+            advice_points.append("Consider hiring a guide or joining an organized group")
+    elif profile['experience_level'] == 'Intermediate':
+        advice_points.append(f"Avoid slopes steeper than {terrain_limit}° today")
+        if prob >= 0.4:
+            advice_points.append("Stick to well-known terrain you've traveled before")
+    elif profile['experience_level'] == 'Advanced':
+        if prob >= 0.5:
+            advice_points.append("Apply conservative terrain selection despite your experience")
+    
+    # Gear-based advice
+    if gear_score < 80:
+        missing_gear = []
+        if not profile.get('has_beacon'): missing_gear.append('avalanche beacon')
+        if not profile.get('has_shovel'): missing_gear.append('shovel')
+        if not profile.get('has_probe'): missing_gear.append('probe')
+        if missing_gear:
+            warnings.append(f"Missing essential gear: {', '.join(missing_gear)}")
+    
+    if gear_score == 100:
+        advice_points.append("Full rescue kit ready - ensure all members know how to use it")
+    elif profile.get('has_airbag') and prob >= 0.5:
+        advice_points.append("Airbag may improve survival odds, but avoidance is still priority")
+    
+    # Group-based advice
+    if group_factor['warning']:
+        warnings.append(group_factor['warning'])
+    
+    if profile['group_size'] >= 3:
+        advice_points.append("Travel one-at-a-time across avalanche terrain")
+    
+    # Trip type specific advice
+    trip_type = profile.get('trip_type', 'Ski Touring')
+    if trip_type == 'Ski Touring' and prob >= 0.4:
+        advice_points.append("Consider skinning up and down rather than skiing steep descents")
+    elif trip_type == 'Snowboarding' and prob >= 0.4:
+        advice_points.append("Avoid traversing across steep slopes - harder to escape if triggered")
+    elif trip_type == 'Snowshoeing/Hiking':
+        advice_points.append("Stay in forested areas and avoid crossing below steep open slopes")
+    elif trip_type == 'Snowmobiling':
+        if prob >= 0.3:
+            warnings.append("High-marking on steep slopes can trigger large avalanches")
+        advice_points.append("Avoid stopping or parking below avalanche paths")
+    
+    # Wind loading advice
+    if wind_results and wind_results.get('wind_analysis'):
+        wind_analysis = wind_results['wind_analysis']
+        loading_risk = wind_analysis.get('loading_risk', 'LOW')
+        if loading_risk in ['HIGH', 'EXTREME']:
+            leeward = wind_analysis.get('leeward_cardinal', 'N/A')
+            warnings.append(f"Avoid {leeward}-facing slopes - heavy wind loading")
+    
+    # Risk tolerance framing
+    if risk_tol['advice_style'] == 'cautious' and decision != 'NO-GO':
+        advice_points.insert(0, "Given your conservative approach, extra margin is factored in")
+    elif risk_tol['advice_style'] == 'aggressive' and prob >= 0.4:
+        advice_points.insert(0, "Even with your risk tolerance, today warrants extra caution")
+    
+    # Build summary card data
+    summary = {
+        'decision': decision,
+        'decision_color': decision_color,
+        'decision_icon': decision_icon,
+        'effective_probability': effective_prob,
+        'gear_score': gear_score,
+        'experience': profile['experience_level'],
+        'group_size': profile['group_size'],
+        'terrain_limit': terrain_limit,
+        'advice_points': advice_points[:5],  # Limit to 5 points
+        'warnings': warnings
+    }
+    
+    return summary, advice_points, warnings
+
 # ============================================
 # UNIT CONVERSION HELPERS
 # ============================================
@@ -4740,6 +4935,120 @@ else:
             st.markdown("""
             <div class="info-box" style="margin: 1rem 0;">
                 <strong>✓ Lower Risk:</strong> Conditions appear more stable · Still carry safety gear · Stay vigilant
+            </div>
+            """, unsafe_allow_html=True)
+        
+        # ============================================
+        # PERSONALIZED DECISION SUPPORT
+        # ============================================
+        personal_rec, advice_list, warning_list = generate_personalized_recommendation(
+            results,
+            st.session_state.env_data,
+            st.session_state.wind_loading_results,
+            st.session_state.user_profile
+        )
+        
+        if personal_rec:
+            st.markdown("---")
+            st.markdown("### 👤 Your Personal Assessment")
+            
+            # Main decision card
+            decision = personal_rec['decision']
+            decision_color = personal_rec['decision_color']
+            decision_icon = personal_rec['decision_icon']
+            
+            # Background color based on decision
+            bg_colors = {
+                'NO-GO': '#fef2f2',
+                'NOT RECOMMENDED': '#fff7ed',
+                'PROCEED WITH CAUTION': '#fffbeb',
+                'ACCEPTABLE': '#f0fdf4'
+            }
+            bg_color = bg_colors.get(decision, '#f9fafb')
+            
+            st.markdown(f"""
+            <div style="background: {bg_color}; border: 2px solid {decision_color}; 
+                        border-radius: 12px; padding: 1.25rem; margin: 0.5rem 0;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                    <div>
+                        <div style="font-size: 2rem; font-weight: 700; color: {decision_color};">
+                            {decision_icon} {decision}
+                        </div>
+                        <div style="font-size: 0.85rem; color: #6b7280; margin-top: 0.25rem;">
+                            For your profile: {personal_rec['experience']} · {personal_rec['group_size']} {'person' if personal_rec['group_size'] == 1 else 'people'} · {st.session_state.user_profile['trip_type']}
+                        </div>
+                    </div>
+                    <div style="text-align: right;">
+                        <div style="font-size: 0.75rem; color: #6b7280;">Adjusted Risk</div>
+                        <div style="font-size: 1.5rem; font-weight: 600; color: {decision_color};">
+                            {personal_rec['effective_probability']*100:.0f}%
+                        </div>
+                    </div>
+                </div>
+                
+                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.75rem; 
+                            padding-top: 1rem; border-top: 1px solid #e5e7eb;">
+                    <div style="text-align: center;">
+                        <div style="font-size: 0.75rem; color: #6b7280;">Gear Score</div>
+                        <div style="font-size: 1.1rem; font-weight: 600; color: {'#10b981' if personal_rec['gear_score'] >= 80 else '#f59e0b' if personal_rec['gear_score'] >= 60 else '#dc2626'};">
+                            {personal_rec['gear_score']}%
+                        </div>
+                    </div>
+                    <div style="text-align: center;">
+                        <div style="font-size: 0.75rem; color: #6b7280;">Max Slope</div>
+                        <div style="font-size: 1.1rem; font-weight: 600;">{personal_rec['terrain_limit']}°</div>
+                    </div>
+                    <div style="text-align: center;">
+                        <div style="font-size: 0.75rem; color: #6b7280;">Risk Tolerance</div>
+                        <div style="font-size: 1.1rem; font-weight: 600;">{st.session_state.user_profile['risk_tolerance']}</div>
+                    </div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            # Warnings (if any)
+            if warning_list:
+                for warning in warning_list:
+                    st.markdown(f"""
+                    <div style="background: #fef2f2; border-left: 4px solid #dc2626;
+                                padding: 0.75rem 1rem; border-radius: 0 8px 8px 0; margin: 0.5rem 0;
+                                font-size: 0.9rem; color: #991b1b;">
+                        <strong>⚠️</strong> {warning}
+                    </div>
+                    """, unsafe_allow_html=True)
+            
+            # Personalized advice points
+            if advice_list:
+                with st.expander("📝 Personalized Recommendations", expanded=True):
+                    for i, advice in enumerate(advice_list, 1):
+                        st.markdown(f"""
+                        <div style="display: flex; align-items: flex-start; gap: 0.5rem; margin: 0.5rem 0;">
+                            <span style="background: #e0e7ff; color: #3730a3; width: 22px; height: 22px; 
+                                        border-radius: 50%; display: flex; align-items: center; justify-content: center;
+                                        font-size: 0.75rem; font-weight: 600; flex-shrink: 0;">{i}</span>
+                            <span style="color: #374151;">{advice}</span>
+                        </div>
+                        """, unsafe_allow_html=True)
+            
+            # Disclaimer
+            st.caption("*Recommendations based on your profile settings. Always use your own judgment.*")
+        
+        else:
+            # Prompt to set up profile
+            st.markdown("---")
+            st.markdown("""
+            <div style="background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%); 
+                        border: 1px solid #93c5fd; border-radius: 12px; padding: 1.25rem; margin: 0.5rem 0;">
+                <div style="display: flex; align-items: center; gap: 1rem;">
+                    <span style="font-size: 2rem;">👤</span>
+                    <div>
+                        <strong style="color: #1e40af;">Get Personalized Recommendations</strong><br>
+                        <span style="font-size: 0.9rem; color: #3b82f6;">
+                            Set up your risk profile in the sidebar to receive advice tailored to your 
+                            experience level, gear, and group size.
+                        </span>
+                    </div>
+                </div>
             </div>
             """, unsafe_allow_html=True)
         
@@ -5532,6 +5841,138 @@ use_imperial = st.sidebar.toggle("🇺🇸 Imperial Units (°F, in, ft)", value=
 if use_imperial != st.session_state.use_imperial:
     st.session_state.use_imperial = use_imperial
     st.rerun()
+
+st.sidebar.markdown("---")
+
+# ============================================
+# PERSONAL RISK PROFILE SECTION
+# ============================================
+st.sidebar.markdown("### 👤 Your Risk Profile")
+
+profile_expander = st.sidebar.expander("Configure your profile", expanded=not st.session_state.user_profile.get('profile_set', False))
+
+with profile_expander:
+    st.markdown("*Personalized recommendations based on your experience and gear*")
+    
+    # Experience Level
+    exp_options = ['Beginner', 'Intermediate', 'Advanced', 'Expert']
+    exp_help = {
+        'Beginner': 'New to backcountry, learning',
+        'Intermediate': 'Some avalanche training',
+        'Advanced': 'Experienced, good judgment',
+        'Expert': 'Professional-level skills'
+    }
+    experience = st.selectbox(
+        "Experience Level",
+        options=exp_options,
+        index=exp_options.index(st.session_state.user_profile.get('experience_level', 'Intermediate')),
+        help="Your backcountry experience and avalanche safety training level",
+        key="profile_experience"
+    )
+    st.caption(f"_{exp_help[experience]}_")
+    
+    # Trip Type
+    trip_options = ['Ski Touring', 'Snowboarding', 'Snowshoeing/Hiking', 'Snowmobiling', 'Ice Climbing']
+    trip_type = st.selectbox(
+        "Activity Type",
+        options=trip_options,
+        index=trip_options.index(st.session_state.user_profile.get('trip_type', 'Ski Touring')) if st.session_state.user_profile.get('trip_type', 'Ski Touring') in trip_options else 0,
+        key="profile_trip_type"
+    )
+    
+    # Group Size
+    group_size = st.number_input(
+        "Group Size",
+        min_value=1,
+        max_value=20,
+        value=st.session_state.user_profile.get('group_size', 2),
+        help="Number of people in your party",
+        key="profile_group_size"
+    )
+    if group_size == 1:
+        st.caption("⚠️ _Solo travel increases risk significantly_")
+    
+    # Risk Tolerance
+    risk_options = ['Conservative', 'Moderate', 'Aggressive']
+    risk_help = {
+        'Conservative': 'Prefer wide safety margins',
+        'Moderate': 'Balanced risk approach',
+        'Aggressive': 'Comfortable with uncertainty'
+    }
+    risk_tolerance = st.selectbox(
+        "Risk Tolerance",
+        options=risk_options,
+        index=risk_options.index(st.session_state.user_profile.get('risk_tolerance', 'Moderate')),
+        key="profile_risk_tolerance"
+    )
+    st.caption(f"_{risk_help[risk_tolerance]}_")
+    
+    # Gear Checklist
+    st.markdown("**Safety Gear:**")
+    col1, col2 = st.columns(2)
+    with col1:
+        has_beacon = st.checkbox("🔊 Beacon", value=st.session_state.user_profile.get('has_beacon', True), key="profile_beacon")
+        has_shovel = st.checkbox("⛏️ Shovel", value=st.session_state.user_profile.get('has_shovel', True), key="profile_shovel")
+    with col2:
+        has_probe = st.checkbox("📍 Probe", value=st.session_state.user_profile.get('has_probe', True), key="profile_probe")
+        has_airbag = st.checkbox("🎒 Airbag", value=st.session_state.user_profile.get('has_airbag', False), key="profile_airbag")
+    
+    # Calculate and show gear score
+    temp_profile = {'has_beacon': has_beacon, 'has_shovel': has_shovel, 'has_probe': has_probe, 'has_airbag': has_airbag}
+    gear_score = get_gear_score(temp_profile)
+    
+    if gear_score >= 80:
+        gear_color = "#10b981"
+        gear_status = "Ready"
+    elif gear_score >= 60:
+        gear_color = "#f59e0b"
+        gear_status = "Partial"
+    else:
+        gear_color = "#dc2626"
+        gear_status = "Incomplete"
+    
+    st.markdown(f"""
+    <div style="background: {gear_color}20; border-left: 3px solid {gear_color}; 
+                padding: 0.5rem; border-radius: 0 4px 4px 0; margin: 0.5rem 0;">
+        <strong style="color: {gear_color};">Gear Score: {gear_score}/100</strong> ({gear_status})
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Save Profile Button
+    if st.button("💾 Save Profile", type="primary", use_container_width=True, key="save_profile_btn"):
+        st.session_state.user_profile = {
+            'experience_level': experience,
+            'group_size': group_size,
+            'has_beacon': has_beacon,
+            'has_shovel': has_shovel,
+            'has_probe': has_probe,
+            'has_airbag': has_airbag,
+            'risk_tolerance': risk_tolerance,
+            'trip_type': trip_type,
+            'profile_set': True
+        }
+        st.success("Profile saved!")
+        st.rerun()
+
+# Show profile status
+if st.session_state.user_profile.get('profile_set'):
+    profile = st.session_state.user_profile
+    gear_score = get_gear_score(profile)
+    st.sidebar.markdown(f"""
+    <div style="background: #f0fdf4; border: 1px solid #86efac; border-radius: 8px; 
+                padding: 0.75rem; margin: 0.5rem 0; font-size: 0.85rem;">
+        <strong>✓ Profile Active</strong><br>
+        {profile['experience_level']} · {profile['group_size']} {'person' if profile['group_size'] == 1 else 'people'} · Gear: {gear_score}%
+    </div>
+    """, unsafe_allow_html=True)
+else:
+    st.sidebar.markdown("""
+    <div style="background: #fef3c7; border: 1px solid #fcd34d; border-radius: 8px; 
+                padding: 0.75rem; margin: 0.5rem 0; font-size: 0.85rem;">
+        <strong>⚠️ Profile Not Set</strong><br>
+        Configure above for personalized advice
+    </div>
+    """, unsafe_allow_html=True)
 
 st.sidebar.markdown("---")
 st.sidebar.markdown("### About")
