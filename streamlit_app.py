@@ -5322,17 +5322,18 @@ if analysis_mode == "🗺️ Route Analysis":
             if 'route_qa_history' not in st.session_state:
                 st.session_state.route_qa_history = []
             
-            col_input, col_btn = st.columns([5, 1])
-            with col_input:
-                route_question = st.text_input(
-                    "Your question",
-                    value="",
-                    placeholder="e.g., Which segments of my route should I avoid?",
-                    key="route_qa_input",
-                    label_visibility="collapsed"
-                )
-            with col_btn:
-                route_ask_btn = st.button("Ask", type="primary", use_container_width=True, key="route_ask_btn")
+            with st.form(key="route_ai_form", clear_on_submit=True):
+                col_input, col_btn = st.columns([5, 1])
+                with col_input:
+                    route_question = st.text_input(
+                        "Your question",
+                        value="",
+                        placeholder="e.g., Which segments of my route should I avoid?",
+                        key="route_qa_input",
+                        label_visibility="collapsed"
+                    )
+                with col_btn:
+                    route_ask_btn = st.form_submit_button("Ask", type="primary", use_container_width=True)
             
             if route_ask_btn and route_question:
                 with st.spinner("🤖 Analyzing your route..."):
@@ -5852,20 +5853,18 @@ else:
             if 'qa_history' not in st.session_state:
                 st.session_state.qa_history = []
             
-            col_input, col_btn = st.columns([5, 1])
-            with col_input:
-                user_question = st.text_input(
-                    "Your question",
-                    value=st.session_state.get('current_question', ''),
-                    placeholder="e.g., Is it safe to ski the north bowl today?",
-                    key="qa_input",
-                    label_visibility="collapsed"
-                )
-            with col_btn:
-                ask_button = st.button("Ask", type="primary", use_container_width=True, key="ask_btn")
-            
-            if 'current_question' in st.session_state:
-                del st.session_state.current_question
+            with st.form(key="ai_form", clear_on_submit=True):
+                col_input, col_btn = st.columns([5, 1])
+                with col_input:
+                    user_question = st.text_input(
+                        "Your question",
+                        value="",
+                        placeholder="e.g., Is it safe to ski the north bowl today?",
+                        key="qa_input",
+                        label_visibility="collapsed"
+                    )
+                with col_btn:
+                    ask_button = st.form_submit_button("Ask", type="primary", use_container_width=True)
             
             if ask_button and user_question:
                 with st.spinner("🤖 Analyzing..."):
