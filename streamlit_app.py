@@ -4197,86 +4197,184 @@ def generate_personalized_recommendation(results, env_data, wind_results, profil
     return summary, advice_points, warnings
 
 # ============================================
-# NATURAL LANGUAGE Q&A SYSTEM
+# NATURAL LANGUAGE Q&A SYSTEM (AI-POWERED)
 # ============================================
-def process_avalanche_question(question, results, env_data, wind_results, location, forecast_data=None):
+def build_avalanche_context(results, env_data, wind_results, location, user_profile=None):
     """
-    Process natural language questions about avalanche conditions and return intelligent answers.
-    Uses keyword matching and available data to generate contextual responses.
+    Build a comprehensive context string with all avalanche data for the AI.
     """
+    context_parts = []
+    
+    # Location info
+    if location:
+        context_parts.append(f"""LOCATION:
+- Coordinates: {location.get('latitude', 0):.4f}°N, {location.get('longitude', 0):.4f}°E
+- Elevation: {location.get('elevation', 0):.0f}m ({location.get('elevation', 0)*3.28084:.0f}ft)
+- Area: {location.get('city', 'Unknown')}, {location.get('region', '')}""")
+    
+    # Risk assessment
+    if results:
+        prob = results.get('avalanche_probability', 0)
+        risk_level = results.get('risk_level', 'Unknown')
+        confidence = results.get('model_confidence', 0)
+        context_parts.append(f"""AVALANCHE RISK ASSESSMENT:
+- Risk Level: {risk_level}
+- Avalanche Probability: {prob*100:.1f}%
+- Model Confidence: {confidence*100:.0f}%
+- Risk Message: {results.get('risk_message', '')}""")
+    
+    # Environmental data
+    if env_data:
+        temp = env_data.get('TA', 0)
+        temp_daily = env_data.get('TA_daily', 0)
+        snow_depth = env_data.get('max_height', 0)
+        snow_change = env_data.get('max_height_1_diff', 0)
+        stability = env_data.get('S5', 2.5)
+        swe = env_data.get('SWE_daily', 0)
+        rain = env_data.get('MS_Rain_daily', 0)
+        lwc = env_data.get('mean_lwc', 0)
+        radiation = env_data.get('ISWR_daily', 0)
+        
+        context_parts.append(f"""CURRENT WEATHER & SNOWPACK:
+- Temperature: {temp:.1f}°C ({temp*9/5+32:.1f}°F)
+- Daily Average Temp: {temp_daily:.1f}°C
+- Snow Depth: {snow_depth*100:.0f}cm ({snow_depth*39.37:.1f}in)
+- 24hr Snow Change: {'+' if snow_change > 0 else ''}{snow_change*100:.1f}cm
+- Stability Index: {stability:.2f} ({'Poor - unstable' if stability < 1.5 else 'Fair' if stability < 2.0 else 'Good - more stable'})
+- Snow Water Equivalent: {swe:.1f}mm
+- Precipitation (24h): {rain:.1f}mm
+- Liquid Water Content: {lwc:.1f}%
+- Solar Radiation: {radiation:.0f} W/m²""")
+    
+    # Wind loading
+    if wind_results and wind_results.get('wind_analysis'):
+        wa = wind_results['wind_analysis']
+        wind_speed = wind_results.get('wind_speed', 0)
+        context_parts.append(f"""WIND LOADING ANALYSIS:
+- Wind Direction: {wa.get('wind_direction_cardinal', 'N/A')} ({wa.get('wind_direction', 0)}°)
+- Wind Speed: {wind_speed:.1f} m/s ({wind_speed*2.237:.1f} mph)
+- Loading Risk: {wa.get('loading_risk', 'LOW')}
+- Dangerous (Leeward) Aspects: {', '.join(wa.get('leeward_aspects', [])) or 'None'}
+- Cross-loaded Aspects: {', '.join(wa.get('cross_load_aspects', [])) or 'None'}
+- Safer (Windward) Aspects: {', '.join(wa.get('safe_aspects', [])) or 'All similar'}
+- Recommendations: {'; '.join(wa.get('recommendations', [])[:3])}""")
+    
+    # User profile if available
+    if user_profile and user_profile.get('profile_set'):
+        context_parts.append(f"""USER PROFILE:
+- Experience Level: {user_profile.get('experience_level', 'Unknown')}
+- Activity Type: {user_profile.get('trip_type', 'Unknown')}
+- Group Size: {user_profile.get('group_size', 0)} people
+- Risk Tolerance: {user_profile.get('risk_tolerance', 'Moderate')}
+- Has Beacon: {user_profile.get('has_beacon', False)}
+- Has Shovel: {user_profile.get('has_shovel', False)}
+- Has Probe: {user_profile.get('has_probe', False)}
+- Has Airbag: {user_profile.get('has_airbag', False)}""")
+    
+    return "\n\n".join(context_parts)
+
+
+def ask_avalanche_ai(question, results, env_data, wind_results, location, user_profile=None):
+    """
+    Use AI to answer avalanche-related questions with full context.
+    Uses the Pollinations AI API.
+    """
+    import requests
+    import json
+    
     if not results:
         return "Please run an assessment first to get answers about current conditions.", "info"
     
-    question_lower = question.lower().strip()
-    prob = results.get('avalanche_probability', 0)
-    risk_level = results.get('risk_level', 'Unknown')
+    # Build context with all available data
+    data_context = build_avalanche_context(results, env_data, wind_results, location, user_profile)
     
-    # Extract key data points
-    temp = env_data.get('TA', 0) if env_data else 0
-    snow_depth = env_data.get('max_height', 0) if env_data else 0
-    snow_change = env_data.get('max_height_1_diff', 0) if env_data else 0
-    stability = env_data.get('S5', 2.5) if env_data else 2.5
+    # System prompt for the AI
+    system_prompt = """You are an expert avalanche safety advisor and backcountry guide. You have access to real-time avalanche assessment data for a specific location. Your role is to:
+
+1. Answer questions accurately based ONLY on the provided data
+2. Give clear, actionable safety advice
+3. Be direct about dangers - lives depend on your guidance
+4. Use the exact numbers and measurements from the data
+5. Consider the user's experience level and gear if provided
+6. Always err on the side of caution
+
+Response format:
+- Keep answers concise but complete (2-4 sentences for simple questions, more for complex ones)
+- Use **bold** for critical safety warnings and key data points
+- Start with a direct answer, then provide supporting details
+- If conditions are dangerous, say so clearly
+- Include specific numbers from the data (temperatures, percentages, aspects, etc.)
+
+DO NOT:
+- Make up data that isn't provided
+- Downplay risks
+- Give vague non-answers
+- Use excessive disclaimers (one brief safety note at end is fine)"""
     
-    wind_dir = None
-    wind_speed = 0
-    leeward_aspects = []
-    safe_aspects = []
-    loading_risk = "LOW"
+    # Build the user message with context
+    user_message = f"""CURRENT AVALANCHE DATA:
+{data_context}
+
+---
+USER QUESTION: {question}
+
+Provide a helpful, accurate answer based on the data above."""
     
-    if wind_results and wind_results.get('wind_analysis'):
-        wa = wind_results['wind_analysis']
-        wind_dir = wa.get('wind_direction_cardinal', 'N/A')
-        wind_speed = wind_results.get('wind_speed', 0)
-        leeward_aspects = wa.get('leeward_aspects', [])
-        safe_aspects = wa.get('safe_aspects', [])
-        loading_risk = wa.get('loading_risk', 'LOW')
-    
-    elev = location.get('elevation', 0) if location else 0
-    
-    # Common question patterns and responses
-    
-    # Safety questions
-    if any(word in question_lower for word in ['safe', 'should i go', 'can i', 'ok to', 'okay to', 'risky']):
-        if prob >= 0.7:
-            return f"**No, it is not safe today.** The avalanche probability is {prob*100:.0f}% ({risk_level} risk). Avoid avalanche terrain entirely. Consider alternative activities or locations.", "error"
-        elif prob >= 0.5:
-            return f"**Conditions are dangerous.** With {prob*100:.0f}% probability ({risk_level} risk), only very experienced parties with full rescue gear should consider carefully selected terrain. Most people should avoid this area today.", "warning"
-        elif prob >= 0.3:
-            return f"**Proceed with significant caution.** The risk is {risk_level} ({prob*100:.0f}% probability). Stick to lower-angle terrain (under 30°), avoid wind-loaded slopes, and ensure your group has rescue equipment and training.", "warning"
-        else:
-            return f"**Conditions appear more favorable** with {prob*100:.0f}% probability ({risk_level} risk). However, always carry rescue gear, travel with partners, and remain vigilant. Conditions can change.", "success"
-    
-    # Aspect/direction questions
-    if any(word in question_lower for word in ['north', 'south', 'east', 'west', 'aspect', 'direction', 'face', 'facing', 'slope']):
-        # Check for specific aspect
-        aspect_asked = None
-        if 'north' in question_lower:
-            aspect_asked = 'N'
-        elif 'south' in question_lower:
-            aspect_asked = 'S'
-        elif 'east' in question_lower:
-            aspect_asked = 'E'
-        elif 'west' in question_lower:
-            aspect_asked = 'W'
+    try:
+        response = requests.post(
+            'https://text.pollinations.ai/openai/v1/chat/completions',
+            headers={'Content-Type': 'application/json'},
+            json={
+                'model': 'openai',
+                'messages': [
+                    {'role': 'system', 'content': system_prompt},
+                    {'role': 'user', 'content': user_message}
+                ],
+                'stream': False,
+                'temperature': 0.3
+            },
+            timeout=30
+        )
         
-        if aspect_asked:
-            is_dangerous = aspect_asked in leeward_aspects or any(aspect_asked in a for a in leeward_aspects)
-            is_safe = aspect_asked in safe_aspects or any(aspect_asked in a for a in safe_aspects)
+        if response.status_code == 200:
+            data = response.json()
+            answer = data['choices'][0]['message']['content']
             
-            if is_dangerous:
-                return f"**{aspect_asked}-facing slopes are HIGH RISK today.** Wind from the {wind_dir} has loaded snow onto these leeward slopes. Avoid {aspect_asked}-facing terrain or choose very conservative lines. Safer aspects today: {', '.join(safe_aspects) if safe_aspects else 'limited options'}.", "error"
-            elif is_safe:
-                return f"**{aspect_asked}-facing slopes are relatively safer** as they are windward (wind-scoured). However, with overall {risk_level} risk ({prob*100:.0f}%), still exercise caution. These slopes may have less fresh snow but fewer wind slabs.", "success"
+            # Determine answer type based on content and risk level
+            prob = results.get('avalanche_probability', 0)
+            answer_lower = answer.lower()
+            
+            if any(word in answer_lower for word in ['no-go', 'do not', 'avoid', 'dangerous', 'high risk', 'extreme']):
+                answer_type = 'error'
+            elif any(word in answer_lower for word in ['caution', 'careful', 'moderate risk', 'watch', 'warning']):
+                answer_type = 'warning'
+            elif any(word in answer_lower for word in ['favorable', 'lower risk', 'safer', 'acceptable', 'good']):
+                answer_type = 'success'
+            elif prob >= 0.6:
+                answer_type = 'error'
+            elif prob >= 0.35:
+                answer_type = 'warning'
             else:
-                return f"**{aspect_asked}-facing slopes have moderate exposure.** They're not the most dangerous (leeward: {', '.join(leeward_aspects)}) but not the safest either. Current overall risk: {risk_level} ({prob*100:.0f}%).", "warning"
+                answer_type = 'info'
+            
+            return answer, answer_type
         else:
-            # General aspect question
-            response = f"**Aspect Analysis for Today:**\n\n"
-            response += f"• **Avoid (Wind-loaded):** {', '.join(leeward_aspects) if leeward_aspects else 'None identified'}\n"
-            response += f"• **Safer (Windward):** {', '.join(safe_aspects) if safe_aspects else 'All similar'}\n"
-            response += f"• **Wind Direction:** {wind_dir} at {wind_speed:.1f} m/s\n"
-            response += f"• **Loading Risk:** {loading_risk}"
-            return response, "info"
+            return f"AI service temporarily unavailable (Status: {response.status_code}). Please try again.", "warning"
+            
+    except requests.exceptions.Timeout:
+        return "Request timed out. The AI service is slow - please try again.", "warning"
+    except requests.exceptions.RequestException as e:
+        return f"Connection error: Unable to reach AI service. Check your internet connection.", "warning"
+    except Exception as e:
+        return f"An error occurred: {str(e)}", "warning"
+
+
+# Legacy function for backward compatibility (simplified fallback)
+def process_avalanche_question(question, results, env_data, wind_results, location, forecast_data=None):
+    """
+    Fallback function - redirects to AI-powered response.
+    """
+    return ask_avalanche_ai(question, results, env_data, wind_results, location)
     
     # Wind questions
     if any(word in question_lower for word in ['wind', 'loading', 'blown', 'drift']):
@@ -5263,23 +5361,23 @@ else:
             st.markdown(factors_html, unsafe_allow_html=True)
         
         # ============================================
-        # NATURAL LANGUAGE Q&A
+        # NATURAL LANGUAGE Q&A (AI-POWERED)
         # ============================================
         st.markdown("---")
-        st.markdown("### 💬 Ask About Conditions")
-        st.caption("Ask questions in plain English about today's avalanche conditions")
+        st.markdown("### 🤖 Ask AI About Conditions")
+        st.caption("Ask anything about today's avalanche conditions - powered by AI with real-time data")
         
         # Initialize Q&A history in session state
         if 'qa_history' not in st.session_state:
             st.session_state.qa_history = []
         
-        # Example questions
+        # Example questions - more varied now that AI can handle anything
         example_questions = [
-            "Is it safe to go today?",
-            "Are north-facing slopes safe?",
-            "What's the wind loading like?",
-            "How much new snow is there?",
-            "What slope angles should I avoid?"
+            "Is it safe to go skiing today?",
+            "Which slopes should I avoid?",
+            "Explain the current risk factors",
+            "What gear do I need?",
+            "Best time to go tomorrow?"
         ]
         
         # Quick question buttons
@@ -5287,7 +5385,7 @@ else:
         quick_cols = st.columns(5)
         for i, q in enumerate(example_questions[:5]):
             with quick_cols[i]:
-                if st.button(q[:20] + "..." if len(q) > 20 else q, key=f"quick_q_{i}", use_container_width=True):
+                if st.button(q[:18] + "..." if len(q) > 18 else q, key=f"quick_q_{i}", use_container_width=True):
                     st.session_state.current_question = q
         
         # Text input for custom questions
@@ -5296,26 +5394,28 @@ else:
             user_question = st.text_input(
                 "Your question",
                 value=st.session_state.get('current_question', ''),
-                placeholder="e.g., Is it safe to ski the north bowl?",
+                placeholder="Ask anything about conditions, safety, gear, terrain...",
                 key="qa_input",
                 label_visibility="collapsed"
             )
         with col_btn:
-            ask_button = st.button("Ask", type="primary", use_container_width=True, key="ask_btn")
+            ask_button = st.button("Ask 🤖", type="primary", use_container_width=True, key="ask_btn")
         
         # Clear the stored question after using it
         if 'current_question' in st.session_state:
             del st.session_state.current_question
         
-        # Process question
+        # Process question with AI
         if ask_button and user_question:
-            answer, answer_type = process_avalanche_question(
-                user_question,
-                results,
-                st.session_state.env_data,
-                st.session_state.wind_loading_results,
-                loc
-            )
+            with st.spinner("🤖 AI is analyzing conditions..."):
+                answer, answer_type = ask_avalanche_ai(
+                    user_question,
+                    results,
+                    st.session_state.env_data,
+                    st.session_state.wind_loading_results,
+                    loc,
+                    st.session_state.user_profile
+                )
             
             # Add to history (keep last 5)
             st.session_state.qa_history.insert(0, {
@@ -5324,6 +5424,7 @@ else:
                 'type': answer_type
             })
             st.session_state.qa_history = st.session_state.qa_history[:5]
+            st.rerun()
         
         # Display Q&A history
         if st.session_state.qa_history:
@@ -5340,7 +5441,7 @@ else:
                 elif qa['type'] == 'success':
                     bg_color = '#f0fdf4'
                     border_color = '#10b981'
-                    icon = '✓'
+                    icon = '✅'
                 else:
                     bg_color = '#f0f9ff'
                     border_color = '#3b82f6'
@@ -5353,7 +5454,7 @@ else:
                         <strong>Q:</strong> {qa['question']}
                     </div>
                     <div style="background: {bg_color}; border-left: 4px solid {border_color};
-                                padding: 0.75rem 1rem; border-radius: 0 8px 8px 0;">
+                                padding: 0.75rem 1rem; border-radius: 0 8px 8px 0; line-height: 1.6;">
                         <span style="font-size: 1.1rem; margin-right: 0.5rem;">{icon}</span>
                         {qa['answer']}
                     </div>
@@ -5367,6 +5468,20 @@ else:
                             st.markdown(f"**A:** {qa2['answer']}")
                             st.markdown("---")
                     break  # Only show latest answer prominently
+        else:
+            # Show helpful prompt when no questions asked yet
+            st.markdown("""
+            <div style="background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%); 
+                        border: 1px dashed #7dd3fc; border-radius: 12px; padding: 1.25rem; 
+                        text-align: center; color: #0369a1;">
+                <div style="font-size: 1.5rem; margin-bottom: 0.5rem;">🤖</div>
+                <strong>AI Assistant Ready</strong><br>
+                <span style="font-size: 0.9rem;">
+                    Ask me anything about today's conditions, safety recommendations, 
+                    which terrain to avoid, or get personalized advice based on your profile.
+                </span>
+            </div>
+            """, unsafe_allow_html=True)
         
         # ============================================
         # SAFE ALTERNATIVE SUGGESTIONS
@@ -6132,7 +6247,7 @@ st.sidebar.markdown("---")
 # ============================================
 st.sidebar.markdown("### 👤 Your Risk Profile")
 
-profile_expander = st.sidebar.expander("Configure your profile", expanded=not st.session_state.user_profile.get('profile_set', False))
+profile_expander = st.sidebar.expander("Configure your profile", expanded=False)
 
 with profile_expander:
     st.markdown("*Personalized recommendations based on your experience and gear*")
