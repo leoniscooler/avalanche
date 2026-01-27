@@ -4966,6 +4966,15 @@ else:
             }
             bg_color = bg_colors.get(decision, '#f9fafb')
             
+            # Pre-calculate gear score color to avoid f-string issues
+            gear_score_val = personal_rec['gear_score']
+            if gear_score_val >= 80:
+                gear_color = '#10b981'
+            elif gear_score_val >= 60:
+                gear_color = '#f59e0b'
+            else:
+                gear_color = '#dc2626'
+            
             st.markdown(f"""
             <div style="background: {bg_color}; border: 2px solid {decision_color}; 
                         border-radius: 12px; padding: 1.25rem; margin: 0.5rem 0;">
@@ -4990,8 +4999,8 @@ else:
                             padding-top: 1rem; border-top: 1px solid #e5e7eb;">
                     <div style="text-align: center;">
                         <div style="font-size: 0.75rem; color: #6b7280;">Gear Score</div>
-                        <div style="font-size: 1.1rem; font-weight: 600; color: {'#10b981' if personal_rec['gear_score'] >= 80 else '#f59e0b' if personal_rec['gear_score'] >= 60 else '#dc2626'};">
-                            {personal_rec['gear_score']}%
+                        <div style="font-size: 1.1rem; font-weight: 600; color: {gear_color};">
+                            {gear_score_val}%
                         </div>
                     </div>
                     <div style="text-align: center;">
