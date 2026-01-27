@@ -3325,36 +3325,41 @@ def generate_risk_summary(results, env_data, wind_results, location):
         wind_direction = wind_analysis.get('wind_direction_cardinal', '')
         leeward_aspects = wind_analysis.get('dangerous_aspects', [])
     
+    # Format values with current unit preference
+    elev_str = format_distance(elevation, 'elevation')
+    snow_str = format_snow_cm(snow_depth)
+    temp_str = format_temp(temperature)
+    
     # Build the summary
     summary_parts = []
     
     # Opening statement based on risk
     if risk_level == "NONE":
-        summary_parts.append(f"<strong>No avalanche risk detected</strong> at this location. There is currently no significant snow cover ({snow_depth:.0f}cm) to create avalanche conditions.")
+        summary_parts.append(f"<strong>No avalanche risk detected</strong> at this location. There is currently no significant snow cover ({snow_str}) to create avalanche conditions.")
         return " ".join(summary_parts), []
     elif risk_level == "HIGH":
-        summary_parts.append(f"<strong>High avalanche danger</strong> is present at this location ({elevation:.0f}m elevation).")
+        summary_parts.append(f"<strong>High avalanche danger</strong> is present at this location ({elev_str} elevation).")
     elif risk_level == "MODERATE":
-        summary_parts.append(f"<strong>Moderate avalanche conditions</strong> exist at this location ({elevation:.0f}m elevation).")
+        summary_parts.append(f"<strong>Moderate avalanche conditions</strong> exist at this location ({elev_str} elevation).")
     else:
-        summary_parts.append(f"<strong>Conditions appear relatively stable</strong> at this location ({elevation:.0f}m elevation).")
+        summary_parts.append(f"<strong>Conditions appear relatively stable</strong> at this location ({elev_str} elevation).")
     
     # Snow conditions
     if snow_depth > 0:
-        summary_parts.append(f"The snowpack is currently {snow_depth:.0f}cm deep.")
+        summary_parts.append(f"The snowpack is currently {snow_str} deep.")
     
     # Key factors list
     key_factors = []
     
     # Temperature analysis
     if temperature > 0:
-        key_factors.append(f"above-freezing temperatures ({temperature:.1f}°C) causing surface warming")
-        summary_parts.append(f"Above-freezing temperatures ({temperature:.1f}°C) are warming the snow surface, which can weaken the snowpack and increase wet avalanche potential.")
+        key_factors.append(f"above-freezing temperatures ({temp_str}) causing surface warming")
+        summary_parts.append(f"Above-freezing temperatures ({temp_str}) are warming the snow surface, which can weaken the snowpack and increase wet avalanche potential.")
     elif temperature > -5:
-        key_factors.append(f"near-freezing temperatures ({temperature:.1f}°C)")
-        summary_parts.append(f"Temperatures are near freezing ({temperature:.1f}°C), creating variable snow conditions.")
+        key_factors.append(f"near-freezing temperatures ({temp_str})")
+        summary_parts.append(f"Temperatures are near freezing ({temp_str}), creating variable snow conditions.")
     else:
-        summary_parts.append(f"Cold temperatures ({temperature:.1f}°C) are helping preserve the snowpack structure.")
+        summary_parts.append(f"Cold temperatures ({temp_str}) are helping preserve the snowpack structure.")
     
     # Stability index
     if stability < 1.0:
@@ -3367,17 +3372,18 @@ def generate_risk_summary(results, env_data, wind_results, location):
         key_factors.append("moderate stability")
     
     # Wind loading
+    wind_str = format_speed(wind_speed, 'wind')
     if wind_speed > 8 and leeward_aspects:
         key_factors.append(f"wind loading from the {wind_direction}")
         aspect_str = ", ".join(leeward_aspects[:3])
-        summary_parts.append(f"Winds from the {wind_direction} at {wind_speed:.1f} m/s are depositing snow on <strong>{aspect_str}-facing slopes</strong>, creating wind slab conditions.")
+        summary_parts.append(f"Winds from the {wind_direction} at {wind_str} are depositing snow on <strong>{aspect_str}-facing slopes</strong>, creating wind slab conditions.")
     elif wind_speed > 5:
-        summary_parts.append(f"Light winds ({wind_speed:.1f} m/s) from the {wind_direction} may be causing minor snow transport.")
+        summary_parts.append(f"Light winds ({wind_str}) from the {wind_direction} may be causing minor snow transport.")
     
     # Solar radiation
     if radiation > 300:
         key_factors.append("strong solar radiation")
-        summary_parts.append(f"High solar radiation ({radiation:.0f} W/m²) is affecting sun-exposed slopes, particularly south and west-facing terrain.")
+        summary_parts.append(f"High solar radiation ({format_radiation(radiation)}) is affecting sun-exposed slopes, particularly south and west-facing terrain.")
     
     # Timing recommendation
     if risk_level == "HIGH":
@@ -3991,6 +3997,101 @@ st.markdown("""
 if 'dark_mode' not in st.session_state:
     st.session_state.dark_mode = False
 
+# Initialize unit preference (metric or imperial)
+if 'use_imperial' not in st.session_state:
+    st.session_state.use_imperial = False
+
+# ============================================
+# UNIT CONVERSION HELPERS
+# ============================================
+def format_temp(celsius, include_unit=True):
+    """Format temperature based on user preference."""
+    if st.session_state.use_imperial:
+        fahrenheit = (celsius * 9/5) + 32
+        return f"{fahrenheit:.1f}°F" if include_unit else f"{fahrenheit:.1f}"
+    return f"{celsius:.1f}°C" if include_unit else f"{celsius:.1f}"
+
+def format_distance(meters, unit_type='snow'):
+    """Format distance/depth based on user preference.
+    unit_type: 'snow' for snow depth (cm/in), 'elevation' for elevation (m/ft), 'wind_distance' for km/mi
+    """
+    if st.session_state.use_imperial:
+        if unit_type == 'snow':
+            inches = meters * 100 * 0.393701  # m to cm to inches
+            return f"{inches:.1f} in"
+        elif unit_type == 'elevation':
+            feet = meters * 3.28084
+            return f"{feet:.0f} ft"
+        elif unit_type == 'wind_distance':
+            miles = meters * 0.621371  # km to miles
+            return f"{miles:.1f} mi"
+    else:
+        if unit_type == 'snow':
+            cm = meters * 100
+            return f"{cm:.0f} cm"
+        elif unit_type == 'elevation':
+            return f"{meters:.0f} m"
+        elif unit_type == 'wind_distance':
+            return f"{meters:.1f} km"
+
+def format_snow_depth(meters):
+    """Format snow depth from meters."""
+    if st.session_state.use_imperial:
+        inches = meters * 39.3701  # meters to inches
+        return f"{inches:.1f} in"
+    return f"{meters * 100:.0f} cm"
+
+def format_snow_cm(cm):
+    """Format snow depth from centimeters."""
+    if st.session_state.use_imperial:
+        inches = cm * 0.393701
+        return f"{inches:.1f} in"
+    return f"{cm:.0f} cm"
+
+def format_speed(ms, unit_type='wind'):
+    """Format speed based on user preference.
+    unit_type: 'wind' for wind speed, 'wind_kmh' for wind in km/h
+    """
+    if st.session_state.use_imperial:
+        if unit_type == 'wind':
+            mph = ms * 2.237  # m/s to mph
+            return f"{mph:.1f} mph"
+        elif unit_type == 'wind_kmh':
+            mph = ms * 0.621371  # km/h to mph
+            return f"{mph:.1f} mph"
+    else:
+        if unit_type == 'wind':
+            return f"{ms:.1f} m/s"
+        elif unit_type == 'wind_kmh':
+            return f"{ms:.0f} km/h"
+
+def format_precip(mm):
+    """Format precipitation in mm to appropriate unit."""
+    if st.session_state.use_imperial:
+        inches = mm * 0.0393701
+        return f"{inches:.2f} in"
+    return f"{mm:.1f} mm"
+
+def format_radiation(wm2):
+    """Format radiation (same in both systems)."""
+    return f"{wm2:.0f} W/m²"
+
+def get_temp_unit():
+    """Get current temperature unit string."""
+    return "°F" if st.session_state.use_imperial else "°C"
+
+def get_snow_unit():
+    """Get current snow depth unit string."""
+    return "in" if st.session_state.use_imperial else "cm"
+
+def get_speed_unit():
+    """Get current speed unit string."""
+    return "mph" if st.session_state.use_imperial else "m/s"
+
+def get_elevation_unit():
+    """Get current elevation unit string."""
+    return "ft" if st.session_state.use_imperial else "m"
+
 # Dark mode CSS - injected conditionally
 if st.session_state.dark_mode:
     st.markdown("""
@@ -4587,12 +4688,14 @@ else:
         # Location header with change button
         loc_col1, loc_col2 = st.columns([5, 1])
         with loc_col1:
+            elev = loc.get('elevation', 0) or 0
+            elev_display = format_distance(elev, 'elevation')
             st.markdown(f"""
             <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.5rem;">
                 <span style="font-size: 1.5rem;">📍</span>
                 <div>
                     <div style="font-size: 1.1rem; font-weight: 600; color: #1f2937;">{loc.get('city', 'Unknown')}, {loc.get('region', '')}</div>
-                    <div style="font-size: 0.8rem; color: #6b7280;">{loc['latitude']:.4f}°N, {loc['longitude']:.4f}°E · Elevation: {loc.get('elevation', 'N/A')}m</div>
+                    <div style="font-size: 0.8rem; color: #6b7280;">{loc['latitude']:.4f}°N, {loc['longitude']:.4f}°E · Elevation: {elev_display}</div>
                 </div>
             </div>
             """, unsafe_allow_html=True)
@@ -4835,23 +4938,35 @@ else:
                         
                         # Weather details
                         with st.expander("View detailed weather forecast"):
-                            # Helper function for snow display
-                            def format_snow(val):
+                            # Helper function for snow display with unit conversion
+                            def format_forecast_snow(val):
                                 snow = val if val is not None else 0
-                                return "None" if snow == 0 else f"{snow:.0f}cm"
+                                if snow == 0:
+                                    return "None"
+                                return format_snow_cm(snow)
                             
-                            def format_rain(val):
+                            def format_forecast_rain(val):
                                 rain = val if val is not None else 0
-                                return "None" if rain == 0 else f"{rain:.1f}mm"
+                                if rain == 0:
+                                    return "None"
+                                return format_precip(rain)
+                            
+                            def format_forecast_temp(val):
+                                temp = val if val is not None else 0
+                                return format_temp(temp)
+                            
+                            def format_forecast_wind(val):
+                                wind = val if val is not None else 0
+                                return format_speed(wind, 'wind_kmh')
                             
                             weather_df = pd.DataFrame({
                                 'Day': [d['date_formatted'] for d in daily],
-                                'High': [f"{d.get('temp_max', 0) or 0:.0f}°C" for d in daily],
-                                'Low': [f"{d.get('temp_min', 0) or 0:.0f}°C" for d in daily],
-                                'Snow': [format_snow(d.get('snowfall')) for d in daily],
-                                'Rain': [format_rain(d.get('precipitation')) for d in daily],
-                                'Wind': [f"{d.get('wind_max', 0) or 0:.0f}km/h" for d in daily],
-                                'Gusts': [f"{d.get('wind_gust', 0) or 0:.0f}km/h" for d in daily]
+                                'High': [format_forecast_temp(d.get('temp_max', 0)) for d in daily],
+                                'Low': [format_forecast_temp(d.get('temp_min', 0)) for d in daily],
+                                'Snow': [format_forecast_snow(d.get('snowfall')) for d in daily],
+                                'Rain': [format_forecast_rain(d.get('precipitation')) for d in daily],
+                                'Wind': [format_forecast_wind(d.get('wind_max', 0)) for d in daily],
+                                'Gusts': [format_forecast_wind(d.get('wind_gust', 0)) for d in daily]
                             })
                             st.dataframe(weather_df, hide_index=True, use_container_width=True)
                 else:
@@ -4871,12 +4986,12 @@ else:
                 with col1:
                     st.metric("Direction", f"{wind_analysis.get('wind_direction_cardinal', 'N/A')}")
                 with col2:
-                    st.metric("Speed", f"{wind_speed:.1f} m/s")
+                    st.metric("Speed", format_speed(wind_speed, 'wind'))
                 with col3:
                     st.metric("Loading Risk", wind_analysis.get('loading_risk', 'N/A'))
                 with col4:
                     max_gust = wind_data.get('current_gusts') or wind_data.get('max_speed_24h') or 0
-                    st.metric("Gusts", f"{max_gust:.1f} m/s")
+                    st.metric("Gusts", format_speed(max_gust, 'wind'))
                 
                 # Loading risk banner
                 loading_risk = wind_analysis.get('loading_risk', 'LOW')
@@ -4997,18 +5112,21 @@ else:
                 with col1:
                     temp = env.get('TA') or 0
                     temp_source = data_sources_dict.get('TA', 'Unknown')
-                    st.metric("Temperature", f"{temp:.1f}°C")
+                    st.metric("Temperature", format_temp(temp))
                     st.caption(f"📡 {temp_source}")
                 with col2:
-                    snow = (env.get('max_height') or 0) * 100
-                    snow_change = (env.get('max_height_1_diff') or 0) * 100
+                    snow_m = env.get('max_height') or 0
+                    snow_change_m = env.get('max_height_1_diff') or 0
                     snow_source = data_sources_dict.get('max_height', 'Unknown')
-                    st.metric("Snow Depth", f"{snow:.0f} cm", delta=f"{snow_change:+.0f}/24h")
+                    snow_display = format_snow_depth(snow_m)
+                    snow_change_display = format_snow_depth(snow_change_m) if snow_change_m != 0 else "0"
+                    delta_str = f"+{snow_change_display}" if snow_change_m > 0 else f"{snow_change_display}" if snow_change_m < 0 else "0/24h"
+                    st.metric("Snow Depth", snow_display, delta=f"{delta_str}/24h" if snow_change_m != 0 else "0/24h")
                     st.caption(f"📡 {snow_source}")
                 with col3:
                     radiation = env.get('ISWR_daily') or 0
                     rad_source = data_sources_dict.get('ISWR_daily', 'Unknown')
-                    st.metric("Solar Radiation", f"{radiation:.0f} W/m²")
+                    st.metric("Solar Radiation", format_radiation(radiation))
                     st.caption(f"📡 {rad_source}")
                 with col4:
                     stability = env.get('S5') or 2.5
@@ -5023,17 +5141,17 @@ else:
                 with col1:
                     temp_daily = env.get('TA_daily') or 0
                     daily_source = data_sources_dict.get('TA_daily', 'Unknown')
-                    st.metric("Daily Avg Temp", f"{temp_daily:.1f}°C")
+                    st.metric("Daily Avg Temp", format_temp(temp_daily))
                     st.caption(f"📡 {daily_source}")
                 with col2:
                     rain = env.get('MS_Rain_daily') or 0
                     rain_source = data_sources_dict.get('MS_Rain_daily', 'Unknown')
-                    st.metric("Precip (24h)", f"{rain:.1f} mm")
+                    st.metric("Precip (24h)", format_precip(rain))
                     st.caption(f"📡 {rain_source}")
                 with col3:
                     swe = env.get('SWE_daily') or 0
                     swe_source = data_sources_dict.get('SWE_daily', 'Unknown')
-                    st.metric("Snow Water Equiv", f"{swe:.0f} mm")
+                    st.metric("Snow Water Equiv", format_precip(swe))
                     st.caption(f"📡 {swe_source}")
                 with col4:
                     lwc = env.get('mean_lwc') or 0
@@ -5261,6 +5379,12 @@ st.sidebar.markdown("### Settings")
 dark_mode = st.sidebar.toggle("🌙 Dark Mode", value=st.session_state.dark_mode, key="dark_mode_toggle")
 if dark_mode != st.session_state.dark_mode:
     st.session_state.dark_mode = dark_mode
+    st.rerun()
+
+# Unit preference toggle
+use_imperial = st.sidebar.toggle("🇺🇸 Imperial Units (°F, in, ft)", value=st.session_state.use_imperial, key="unit_toggle")
+if use_imperial != st.session_state.use_imperial:
+    st.session_state.use_imperial = use_imperial
     st.rerun()
 
 st.sidebar.markdown("---")
