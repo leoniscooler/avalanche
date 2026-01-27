@@ -3330,14 +3330,14 @@ def generate_risk_summary(results, env_data, wind_results, location):
     
     # Opening statement based on risk
     if risk_level == "NONE":
-        summary_parts.append(f"**No avalanche risk detected** at this location. There is currently no significant snow cover ({snow_depth:.0f}cm) to create avalanche conditions.")
+        summary_parts.append(f"<strong>No avalanche risk detected</strong> at this location. There is currently no significant snow cover ({snow_depth:.0f}cm) to create avalanche conditions.")
         return " ".join(summary_parts), []
     elif risk_level == "HIGH":
-        summary_parts.append(f"**High avalanche danger** is present at this location ({elevation:.0f}m elevation).")
+        summary_parts.append(f"<strong>High avalanche danger</strong> is present at this location ({elevation:.0f}m elevation).")
     elif risk_level == "MODERATE":
-        summary_parts.append(f"**Moderate avalanche conditions** exist at this location ({elevation:.0f}m elevation).")
+        summary_parts.append(f"<strong>Moderate avalanche conditions</strong> exist at this location ({elevation:.0f}m elevation).")
     else:
-        summary_parts.append(f"**Conditions appear relatively stable** at this location ({elevation:.0f}m elevation).")
+        summary_parts.append(f"<strong>Conditions appear relatively stable</strong> at this location ({elevation:.0f}m elevation).")
     
     # Snow conditions
     if snow_depth > 0:
@@ -3359,7 +3359,7 @@ def generate_risk_summary(results, env_data, wind_results, location):
     # Stability index
     if stability < 1.0:
         key_factors.append("very poor snowpack stability")
-        summary_parts.append(f"The stability index ({stability:.2f}) indicates a **very weak snowpack** with high potential for human-triggered avalanches.")
+        summary_parts.append(f"The stability index ({stability:.2f}) indicates a <strong>very weak snowpack</strong> with high potential for human-triggered avalanches.")
     elif stability < 1.5:
         key_factors.append("poor stability conditions")
         summary_parts.append(f"The stability index ({stability:.2f}) suggests poor stability with moderate triggering potential.")
@@ -3370,7 +3370,7 @@ def generate_risk_summary(results, env_data, wind_results, location):
     if wind_speed > 8 and leeward_aspects:
         key_factors.append(f"wind loading from the {wind_direction}")
         aspect_str = ", ".join(leeward_aspects[:3])
-        summary_parts.append(f"Winds from the {wind_direction} at {wind_speed:.1f} m/s are depositing snow on **{aspect_str}-facing slopes**, creating wind slab conditions.")
+        summary_parts.append(f"Winds from the {wind_direction} at {wind_speed:.1f} m/s are depositing snow on <strong>{aspect_str}-facing slopes</strong>, creating wind slab conditions.")
     elif wind_speed > 5:
         summary_parts.append(f"Light winds ({wind_speed:.1f} m/s) from the {wind_direction} may be causing minor snow transport.")
     
@@ -3381,11 +3381,11 @@ def generate_risk_summary(results, env_data, wind_results, location):
     
     # Timing recommendation
     if risk_level == "HIGH":
-        summary_parts.append("**Recommendation:** Avoid avalanche terrain. If travel is necessary, stick to low-angle slopes below 30° and avoid terrain traps.")
+        summary_parts.append("<strong>Recommendation:</strong> Avoid avalanche terrain. If travel is necessary, stick to low-angle slopes below 30° and avoid terrain traps.")
     elif risk_level == "MODERATE":
-        summary_parts.append("**Recommendation:** Use caution in avalanche terrain. Avoid steep slopes with recent wind loading. Travel one at a time in exposed areas and carry rescue equipment.")
+        summary_parts.append("<strong>Recommendation:</strong> Use caution in avalanche terrain. Avoid steep slopes with recent wind loading. Travel one at a time in exposed areas and carry rescue equipment.")
     else:
-        summary_parts.append("**Recommendation:** Standard avalanche precautions advised. Carry rescue gear and maintain awareness of changing conditions.")
+        summary_parts.append("<strong>Recommendation:</strong> Standard avalanche precautions advised. Carry rescue gear and maintain awareness of changing conditions.")
     
     return " ".join(summary_parts), key_factors
 
