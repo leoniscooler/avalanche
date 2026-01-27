@@ -5371,22 +5371,19 @@ else:
         if 'qa_history' not in st.session_state:
             st.session_state.qa_history = []
         
-        # Example questions - more varied now that AI can handle anything
-        example_questions = [
-            "Is it safe to go skiing today?",
-            "Which slopes should I avoid?",
-            "Explain the current risk factors",
-            "What gear do I need?",
-            "Best time to go tomorrow?"
-        ]
-        
-        # Quick question buttons
-        st.markdown("**Quick Questions:**")
-        quick_cols = st.columns(5)
-        for i, q in enumerate(example_questions[:5]):
-            with quick_cols[i]:
-                if st.button(q[:18] + "..." if len(q) > 18 else q, key=f"quick_q_{i}", use_container_width=True):
-                    st.session_state.current_question = q
+        # Helper function to convert markdown to HTML
+        def convert_md_to_html(text):
+            """Convert markdown formatting to HTML for proper display."""
+            import re
+            # Convert **bold** to <strong>
+            text = re.sub(r'\*\*([^*]+)\*\*', r'<strong>\1</strong>', text)
+            # Convert *italic* to <em>
+            text = re.sub(r'\*([^*]+)\*', r'<em>\1</em>', text)
+            # Convert bullet points
+            text = re.sub(r'^[\-•]\s*', '• ', text, flags=re.MULTILINE)
+            # Convert newlines to <br> for HTML display
+            text = text.replace('\n\n', '<br><br>').replace('\n', '<br>')
+            return text
         
         # Text input for custom questions
         col_input, col_btn = st.columns([5, 1])
@@ -5417,10 +5414,14 @@ else:
                     st.session_state.user_profile
                 )
             
+            # Convert markdown to HTML before storing
+            answer_html = convert_md_to_html(answer)
+            
             # Add to history (keep last 5)
             st.session_state.qa_history.insert(0, {
                 'question': user_question,
-                'answer': answer,
+                'answer': answer_html,
+                'answer_raw': answer,  # Keep raw for expander
                 'type': answer_type
             })
             st.session_state.qa_history = st.session_state.qa_history[:5]
@@ -5465,7 +5466,7 @@ else:
                     with st.expander(f"Previous questions ({len(st.session_state.qa_history) - 1} more)"):
                         for qa2 in st.session_state.qa_history[1:]:
                             st.markdown(f"**Q:** {qa2['question']}")
-                            st.markdown(f"**A:** {qa2['answer']}")
+                            st.markdown(qa2.get('answer_raw', qa2['answer']))
                             st.markdown("---")
                     break  # Only show latest answer prominently
         else:
