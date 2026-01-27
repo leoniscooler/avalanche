@@ -4197,6 +4197,173 @@ def generate_personalized_recommendation(results, env_data, wind_results, profil
     return summary, advice_points, warnings
 
 # ============================================
+# NATURAL LANGUAGE Q&A SYSTEM
+# ============================================
+def process_avalanche_question(question, results, env_data, wind_results, location, forecast_data=None):
+    """
+    Process natural language questions about avalanche conditions and return intelligent answers.
+    Uses keyword matching and available data to generate contextual responses.
+    """
+    if not results:
+        return "Please run an assessment first to get answers about current conditions.", "info"
+    
+    question_lower = question.lower().strip()
+    prob = results.get('avalanche_probability', 0)
+    risk_level = results.get('risk_level', 'Unknown')
+    
+    # Extract key data points
+    temp = env_data.get('TA', 0) if env_data else 0
+    snow_depth = env_data.get('max_height', 0) if env_data else 0
+    snow_change = env_data.get('max_height_1_diff', 0) if env_data else 0
+    stability = env_data.get('S5', 2.5) if env_data else 2.5
+    
+    wind_dir = None
+    wind_speed = 0
+    leeward_aspects = []
+    safe_aspects = []
+    loading_risk = "LOW"
+    
+    if wind_results and wind_results.get('wind_analysis'):
+        wa = wind_results['wind_analysis']
+        wind_dir = wa.get('wind_direction_cardinal', 'N/A')
+        wind_speed = wind_results.get('wind_speed', 0)
+        leeward_aspects = wa.get('leeward_aspects', [])
+        safe_aspects = wa.get('safe_aspects', [])
+        loading_risk = wa.get('loading_risk', 'LOW')
+    
+    elev = location.get('elevation', 0) if location else 0
+    
+    # Common question patterns and responses
+    
+    # Safety questions
+    if any(word in question_lower for word in ['safe', 'should i go', 'can i', 'ok to', 'okay to', 'risky']):
+        if prob >= 0.7:
+            return f"**No, it is not safe today.** The avalanche probability is {prob*100:.0f}% ({risk_level} risk). Avoid avalanche terrain entirely. Consider alternative activities or locations.", "error"
+        elif prob >= 0.5:
+            return f"**Conditions are dangerous.** With {prob*100:.0f}% probability ({risk_level} risk), only very experienced parties with full rescue gear should consider carefully selected terrain. Most people should avoid this area today.", "warning"
+        elif prob >= 0.3:
+            return f"**Proceed with significant caution.** The risk is {risk_level} ({prob*100:.0f}% probability). Stick to lower-angle terrain (under 30°), avoid wind-loaded slopes, and ensure your group has rescue equipment and training.", "warning"
+        else:
+            return f"**Conditions appear more favorable** with {prob*100:.0f}% probability ({risk_level} risk). However, always carry rescue gear, travel with partners, and remain vigilant. Conditions can change.", "success"
+    
+    # Aspect/direction questions
+    if any(word in question_lower for word in ['north', 'south', 'east', 'west', 'aspect', 'direction', 'face', 'facing', 'slope']):
+        # Check for specific aspect
+        aspect_asked = None
+        if 'north' in question_lower:
+            aspect_asked = 'N'
+        elif 'south' in question_lower:
+            aspect_asked = 'S'
+        elif 'east' in question_lower:
+            aspect_asked = 'E'
+        elif 'west' in question_lower:
+            aspect_asked = 'W'
+        
+        if aspect_asked:
+            is_dangerous = aspect_asked in leeward_aspects or any(aspect_asked in a for a in leeward_aspects)
+            is_safe = aspect_asked in safe_aspects or any(aspect_asked in a for a in safe_aspects)
+            
+            if is_dangerous:
+                return f"**{aspect_asked}-facing slopes are HIGH RISK today.** Wind from the {wind_dir} has loaded snow onto these leeward slopes. Avoid {aspect_asked}-facing terrain or choose very conservative lines. Safer aspects today: {', '.join(safe_aspects) if safe_aspects else 'limited options'}.", "error"
+            elif is_safe:
+                return f"**{aspect_asked}-facing slopes are relatively safer** as they are windward (wind-scoured). However, with overall {risk_level} risk ({prob*100:.0f}%), still exercise caution. These slopes may have less fresh snow but fewer wind slabs.", "success"
+            else:
+                return f"**{aspect_asked}-facing slopes have moderate exposure.** They're not the most dangerous (leeward: {', '.join(leeward_aspects)}) but not the safest either. Current overall risk: {risk_level} ({prob*100:.0f}%).", "warning"
+        else:
+            # General aspect question
+            response = f"**Aspect Analysis for Today:**\n\n"
+            response += f"• **Avoid (Wind-loaded):** {', '.join(leeward_aspects) if leeward_aspects else 'None identified'}\n"
+            response += f"• **Safer (Windward):** {', '.join(safe_aspects) if safe_aspects else 'All similar'}\n"
+            response += f"• **Wind Direction:** {wind_dir} at {wind_speed:.1f} m/s\n"
+            response += f"• **Loading Risk:** {loading_risk}"
+            return response, "info"
+    
+    # Wind questions
+    if any(word in question_lower for word in ['wind', 'loading', 'blown', 'drift']):
+        if loading_risk in ['HIGH', 'EXTREME']:
+            return f"**Wind loading is {loading_risk}.** Strong winds from {wind_dir} ({wind_speed:.1f} m/s) are creating dangerous wind slabs on {', '.join(leeward_aspects)}-facing slopes. Avoid these aspects. Safer travel on {', '.join(safe_aspects) if safe_aspects else 'lower-angle terrain'}.", "error"
+        elif loading_risk == 'MODERATE':
+            return f"**Moderate wind loading present.** Wind from {wind_dir} at {wind_speed:.1f} m/s. Watch for wind slabs on {', '.join(leeward_aspects)}-facing slopes, especially near ridgelines and in cross-loaded gullies.", "warning"
+        else:
+            return f"**Wind loading is LOW.** Light winds from {wind_dir} ({wind_speed:.1f} m/s) mean minimal fresh wind slab formation. However, older wind slabs from previous storms may still exist.", "success"
+    
+    # Snow/conditions questions
+    if any(word in question_lower for word in ['snow', 'depth', 'new snow', 'fresh', 'powder', 'conditions']):
+        snow_cm = snow_depth * 100
+        change_cm = snow_change * 100
+        
+        response = f"**Current Snow Conditions:**\n\n"
+        response += f"• **Snow Depth:** {snow_cm:.0f} cm ({snow_depth*39.37:.1f} inches)\n"
+        if change_cm > 0:
+            response += f"• **24hr Change:** +{change_cm:.0f} cm of new snow\n"
+            if change_cm > 30:
+                response += f"• ⚠️ **Significant loading** - new snow adds stress to weak layers\n"
+        elif change_cm < 0:
+            response += f"• **24hr Change:** {change_cm:.0f} cm (settlement/melt)\n"
+        response += f"• **Temperature:** {temp:.1f}°C ({temp*9/5+32:.1f}°F)\n"
+        response += f"• **Stability Index:** {stability:.2f}"
+        
+        if stability < 1.5:
+            response += " (Poor - high instability)"
+        elif stability < 2.0:
+            response += " (Fair - some instability)"
+        else:
+            response += " (Good - more stable)"
+        
+        return response, "info"
+    
+    # Temperature questions
+    if any(word in question_lower for word in ['temperature', 'temp', 'cold', 'warm', 'freezing', 'melt']):
+        temp_f = temp * 9/5 + 32
+        if temp > 0:
+            return f"**Temperature is {temp:.1f}°C ({temp_f:.1f}°F) - above freezing.** Warm temperatures can weaken the snowpack through melting. Wet loose avalanches become more likely, especially on sun-exposed slopes in the afternoon. Consider early morning starts.", "warning"
+        elif temp > -5:
+            return f"**Temperature is {temp:.1f}°C ({temp_f:.1f}°F) - near freezing.** The snowpack may be undergoing temperature changes. Watch for changing conditions throughout the day.", "info"
+        else:
+            return f"**Temperature is {temp:.1f}°C ({temp_f:.1f}°F) - cold.** Cold temperatures generally preserve snowpack stability but can also preserve weak layers. Slab avalanches remain the primary concern.", "info"
+    
+    # Tomorrow/forecast questions
+    if any(word in question_lower for word in ['tomorrow', 'forecast', 'next', 'later', 'week', 'upcoming']):
+        return "**Forecast Information:** Check the **7-Day Forecast** tab above for detailed upcoming conditions including temperature trends, expected snowfall, and wind patterns. Avalanche conditions can change rapidly - always reassess before your trip.", "info"
+    
+    # Elevation questions
+    if any(word in question_lower for word in ['elevation', 'altitude', 'treeline', 'alpine', 'high']):
+        if elev > 3000:
+            return f"**High Alpine ({elev:.0f}m / {elev*3.28:.0f}ft):** Above treeline, you're exposed to wind loading and have no terrain anchors. Wind slabs and cornices are primary concerns. Current risk: {risk_level} ({prob*100:.0f}%).", "warning"
+        elif elev > 2000:
+            return f"**Alpine/Treeline ({elev:.0f}m / {elev*3.28:.0f}ft):** Transitional zone where both wind slabs and storm slabs occur. Watch for terrain traps. Current risk: {risk_level} ({prob*100:.0f}%).", "info"
+        else:
+            return f"**Below Treeline ({elev:.0f}m / {elev*3.28:.0f}ft):** Trees provide some anchoring but avalanches still occur in openings and on steep slopes. Current risk: {risk_level} ({prob*100:.0f}%).", "info"
+    
+    # Gear questions
+    if any(word in question_lower for word in ['gear', 'equipment', 'beacon', 'shovel', 'probe', 'airbag', 'bring', 'need']):
+        return "**Essential Avalanche Safety Gear:**\n\n• **Avalanche Beacon** - Wear it, turn it on, know how to search\n• **Shovel** - Metal blade, collapsible\n• **Probe** - 240cm+ recommended\n• **Airbag Pack** - Additional protection (not a substitute for avoidance)\n\n**Also Recommended:** First aid kit, communication device, partner with training. Set your profile in the sidebar for personalized gear recommendations.", "info"
+    
+    # Steepness/angle questions
+    if any(word in question_lower for word in ['steep', 'angle', 'degree', '30', '35', '40', '45']):
+        return f"**Slope Angle Guidelines:**\n\n• **< 25°:** Generally safe from avalanches\n• **25-30°:** Avalanches possible, use caution\n• **30-35°:** Prime avalanche terrain - most slides occur here\n• **35-45°:** Very dangerous, frequent avalanches\n• **> 45°:** Sluffs more common, but still very dangerous\n\nWith current {risk_level} risk ({prob*100:.0f}%), stay below **30°** for conservative travel, or below **25°** if inexperienced.", "info"
+    
+    # What/why questions about current risk
+    if any(word in question_lower for word in ['why', 'what', 'cause', 'reason', 'explain']):
+        factors = []
+        if snow_change > 0.1:
+            factors.append(f"recent snowfall (+{snow_change*100:.0f}cm)")
+        if loading_risk in ['HIGH', 'EXTREME']:
+            factors.append(f"significant wind loading from {wind_dir}")
+        if stability < 1.5:
+            factors.append("poor snowpack stability")
+        if temp > 0:
+            factors.append("above-freezing temperatures")
+        
+        if factors:
+            return f"**Current {risk_level} risk ({prob*100:.0f}%) is influenced by:**\n\n" + "\n".join([f"• {f.capitalize()}" for f in factors]) + "\n\nThese factors combine to create the current hazard level. Check the Conditions Summary for more details.", "info"
+        else:
+            return f"**Current risk is {risk_level} ({prob*100:.0f}%).** The assessment considers snowpack stability, recent weather, wind loading, and terrain factors. See the Conditions Summary above for a detailed breakdown.", "info"
+    
+    # Default response
+    return f"I can help answer questions about:\n\n• **Safety:** \"Is it safe to go today?\"\n• **Aspects:** \"Are north-facing slopes safe?\"\n• **Wind:** \"What's the wind loading like?\"\n• **Snow:** \"How much new snow fell?\"\n• **Temperature:** \"Is it warming up?\"\n• **Gear:** \"What equipment do I need?\"\n• **Terrain:** \"What slope angles are safe?\"\n\nCurrent conditions: **{risk_level}** risk with **{prob*100:.0f}%** avalanche probability.", "info"
+
+# ============================================
 # UNIT CONVERSION HELPERS
 # ============================================
 def format_temp(celsius, include_unit=True):
@@ -5094,6 +5261,112 @@ else:
                 for factor in key_factors
             ])
             st.markdown(factors_html, unsafe_allow_html=True)
+        
+        # ============================================
+        # NATURAL LANGUAGE Q&A
+        # ============================================
+        st.markdown("---")
+        st.markdown("### 💬 Ask About Conditions")
+        st.caption("Ask questions in plain English about today's avalanche conditions")
+        
+        # Initialize Q&A history in session state
+        if 'qa_history' not in st.session_state:
+            st.session_state.qa_history = []
+        
+        # Example questions
+        example_questions = [
+            "Is it safe to go today?",
+            "Are north-facing slopes safe?",
+            "What's the wind loading like?",
+            "How much new snow is there?",
+            "What slope angles should I avoid?"
+        ]
+        
+        # Quick question buttons
+        st.markdown("**Quick Questions:**")
+        quick_cols = st.columns(5)
+        for i, q in enumerate(example_questions[:5]):
+            with quick_cols[i]:
+                if st.button(q[:20] + "..." if len(q) > 20 else q, key=f"quick_q_{i}", use_container_width=True):
+                    st.session_state.current_question = q
+        
+        # Text input for custom questions
+        col_input, col_btn = st.columns([5, 1])
+        with col_input:
+            user_question = st.text_input(
+                "Your question",
+                value=st.session_state.get('current_question', ''),
+                placeholder="e.g., Is it safe to ski the north bowl?",
+                key="qa_input",
+                label_visibility="collapsed"
+            )
+        with col_btn:
+            ask_button = st.button("Ask", type="primary", use_container_width=True, key="ask_btn")
+        
+        # Clear the stored question after using it
+        if 'current_question' in st.session_state:
+            del st.session_state.current_question
+        
+        # Process question
+        if ask_button and user_question:
+            answer, answer_type = process_avalanche_question(
+                user_question,
+                results,
+                st.session_state.env_data,
+                st.session_state.wind_loading_results,
+                loc
+            )
+            
+            # Add to history (keep last 5)
+            st.session_state.qa_history.insert(0, {
+                'question': user_question,
+                'answer': answer,
+                'type': answer_type
+            })
+            st.session_state.qa_history = st.session_state.qa_history[:5]
+        
+        # Display Q&A history
+        if st.session_state.qa_history:
+            for i, qa in enumerate(st.session_state.qa_history):
+                # Determine colors based on answer type
+                if qa['type'] == 'error':
+                    bg_color = '#fef2f2'
+                    border_color = '#dc2626'
+                    icon = '🛑'
+                elif qa['type'] == 'warning':
+                    bg_color = '#fffbeb'
+                    border_color = '#f59e0b'
+                    icon = '⚠️'
+                elif qa['type'] == 'success':
+                    bg_color = '#f0fdf4'
+                    border_color = '#10b981'
+                    icon = '✓'
+                else:
+                    bg_color = '#f0f9ff'
+                    border_color = '#3b82f6'
+                    icon = 'ℹ️'
+                
+                st.markdown(f"""
+                <div style="background: #f8fafc; border-radius: 12px; padding: 1rem; margin: 0.75rem 0;
+                            border: 1px solid #e2e8f0;">
+                    <div style="color: #6b7280; font-size: 0.85rem; margin-bottom: 0.5rem;">
+                        <strong>Q:</strong> {qa['question']}
+                    </div>
+                    <div style="background: {bg_color}; border-left: 4px solid {border_color};
+                                padding: 0.75rem 1rem; border-radius: 0 8px 8px 0;">
+                        <span style="font-size: 1.1rem; margin-right: 0.5rem;">{icon}</span>
+                        {qa['answer']}
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                if i == 0 and len(st.session_state.qa_history) > 1:
+                    with st.expander(f"Previous questions ({len(st.session_state.qa_history) - 1} more)"):
+                        for qa2 in st.session_state.qa_history[1:]:
+                            st.markdown(f"**Q:** {qa2['question']}")
+                            st.markdown(f"**A:** {qa2['answer']}")
+                            st.markdown("---")
+                    break  # Only show latest answer prominently
         
         # ============================================
         # SAFE ALTERNATIVE SUGGESTIONS
