@@ -5218,9 +5218,19 @@ else:
             return text
         
         # -------------------------------------------
-        # SECTION 1: CONDITIONS SUMMARY (Expanded by default)
+        # ALL DETAILS IN TABBED SECTION
         # -------------------------------------------
-        with st.expander("📋 Conditions Summary", expanded=True):
+        st.markdown("---")
+        st.markdown("### 📊 Detailed Forecast & Conditions")
+        
+        # Create tabs including the moved sections
+        tab_summary, tab_profile, tab_ai, tab_alternatives, tab_forecast, tab_wind, tab_conditions, tab_live, tab_details = st.tabs([
+            "📋 Summary", "👤 Personal", "🤖 Ask AI", "🗺️ Alternatives",
+            "📅 Forecast", "💨 Wind", "🌡️ Conditions", "📷 Live View", "ℹ️ Details"
+        ])
+        
+        # TAB: Conditions Summary
+        with tab_summary:
             # Generate the natural language summary
             summary_text, key_factors = generate_risk_summary(
                 results, 
@@ -5248,18 +5258,16 @@ else:
                 ])
                 st.markdown(factors_html, unsafe_allow_html=True)
         
-        # -------------------------------------------
-        # SECTION 2: PERSONAL ASSESSMENT (if profile set)
-        # -------------------------------------------
-        personal_rec, advice_list, warning_list = generate_personalized_recommendation(
-            results,
-            st.session_state.env_data,
-            st.session_state.wind_loading_results,
-            st.session_state.user_profile
-        )
-        
-        if personal_rec:
-            with st.expander("👤 Your Personal Assessment", expanded=True):
+        # TAB: Personal Assessment
+        with tab_profile:
+            personal_rec, advice_list, warning_list = generate_personalized_recommendation(
+                results,
+                st.session_state.env_data,
+                st.session_state.wind_loading_results,
+                st.session_state.user_profile
+            )
+            
+            if personal_rec:
                 decision = personal_rec['decision']
                 decision_color = personal_rec['decision_color']
                 decision_icon = personal_rec['decision_icon']
@@ -5325,8 +5333,7 @@ else:
                     st.markdown("**Recommendations for you:**")
                     for i, advice in enumerate(advice_list, 1):
                         st.markdown(f"{i}. {advice}")
-        else:
-            with st.expander("👤 Personalize Your Assessment"):
+            else:
                 st.markdown("""
                 <div style="background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%); 
                             border-radius: 12px; padding: 1.25rem;">
@@ -5338,10 +5345,8 @@ else:
                 </div>
                 """, unsafe_allow_html=True)
         
-        # -------------------------------------------
-        # SECTION 3: AI ASSISTANT
-        # -------------------------------------------
-        with st.expander("🤖 Ask AI About Conditions", expanded=False):
+        # TAB: AI Assistant
+        with tab_ai:
             st.caption("Ask anything in plain English - the AI has access to all current data")
             
             if 'qa_history' not in st.session_state:
@@ -5416,11 +5421,9 @@ else:
                             st.markdown(qa2.get('answer_raw', qa2['answer']))
                             st.markdown("---")
         
-        # -------------------------------------------
-        # SECTION 4: SAFER ALTERNATIVES (if elevated risk)
-        # -------------------------------------------
-        if results['risk_level'] in ['HIGH', 'MODERATE']:
-            with st.expander("🗺️ Safer Alternative Terrain", expanded=False):
+        # TAB: Safer Alternatives
+        with tab_alternatives:
+            if results['risk_level'] in ['HIGH', 'MODERATE']:
                 st.caption("Nearby areas that may offer lower risk based on current conditions")
                 
                 alternatives = find_safe_alternatives(
@@ -5513,17 +5516,11 @@ else:
                         st_folium(alt_map, width=None, height=350, key="alternatives_map")
                 else:
                     st.info("Current location already has the lowest risk in the surrounding area.")
+            else:
+                st.success("✅ Risk level is LOW - current location is already a good choice!")
+                st.caption("Alternative terrain suggestions appear when risk is MODERATE or HIGH.")
         
-        # -------------------------------------------
-        # SECTION 5: DETAILED DATA (Tabs)
-        # -------------------------------------------
-        st.markdown("---")
-        st.markdown("### 📊 Detailed Forecast & Conditions")
-        tab_forecast, tab_wind, tab_conditions, tab_live, tab_details = st.tabs([
-            "📅 7-Day Forecast", "💨 Wind Loading", "🌡️ Current Conditions", "📷 Live View", "ℹ️ Details"
-        ])
-        
-        # TAB 1: 7-Day Forecast
+        # TAB: 7-Day Forecast
         with tab_forecast:
             forecast_loc = results.get('location', st.session_state.location)
             if forecast_loc:
