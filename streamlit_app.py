@@ -5204,8 +5204,53 @@ else:
             """, unsafe_allow_html=True)
         
         # ============================================
-        # PERSONALIZED DECISION SUPPORT
+        # REORGANIZED SECTIONS - Clean & Collapsible
         # ============================================
+        
+        # Helper function to convert markdown to HTML
+        def convert_md_to_html(text):
+            """Convert markdown formatting to HTML for proper display."""
+            import re
+            text = re.sub(r'\*\*([^*]+)\*\*', r'<strong>\1</strong>', text)
+            text = re.sub(r'\*([^*]+)\*', r'<em>\1</em>', text)
+            text = re.sub(r'^[\-•]\s*', '• ', text, flags=re.MULTILINE)
+            text = text.replace('\n\n', '<br><br>').replace('\n', '<br>')
+            return text
+        
+        # -------------------------------------------
+        # SECTION 1: CONDITIONS SUMMARY (Expanded by default)
+        # -------------------------------------------
+        with st.expander("📋 Conditions Summary", expanded=True):
+            # Generate the natural language summary
+            summary_text, key_factors = generate_risk_summary(
+                results, 
+                st.session_state.env_data,
+                st.session_state.wind_loading_results,
+                loc
+            )
+            
+            st.markdown(f"""
+            <div style="background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%); 
+                        border-radius: 12px; padding: 1.25rem; margin: 0.5rem 0;
+                        border: 1px solid #e2e8f0; line-height: 1.7;">
+                {summary_text}
+            </div>
+            """, unsafe_allow_html=True)
+            
+            # Key factors pills
+            if key_factors:
+                st.markdown("**Key Risk Factors:**")
+                factors_html = " ".join([
+                    f'<span style="display: inline-block; background: #fef3c7; color: #92400e; '
+                    f'padding: 0.25rem 0.75rem; border-radius: 9999px; font-size: 0.8rem; '
+                    f'margin: 0.25rem 0.125rem; border: 1px solid #fcd34d;">{factor}</span>'
+                    for factor in key_factors
+                ])
+                st.markdown(factors_html, unsafe_allow_html=True)
+        
+        # -------------------------------------------
+        # SECTION 2: PERSONAL ASSESSMENT (if profile set)
+        # -------------------------------------------
         personal_rec, advice_list, warning_list = generate_personalized_recommendation(
             results,
             st.session_state.env_data,
@@ -5214,380 +5259,266 @@ else:
         )
         
         if personal_rec:
-            st.markdown("---")
-            st.markdown("### 👤 Your Personal Assessment")
-            
-            # Main decision card
-            decision = personal_rec['decision']
-            decision_color = personal_rec['decision_color']
-            decision_icon = personal_rec['decision_icon']
-            
-            # Background color based on decision
-            bg_colors = {
-                'NO-GO': '#fef2f2',
-                'NOT RECOMMENDED': '#fff7ed',
-                'PROCEED WITH CAUTION': '#fffbeb',
-                'ACCEPTABLE': '#f0fdf4'
-            }
-            bg_color = bg_colors.get(decision, '#f9fafb')
-            
-            # Pre-calculate gear score color to avoid f-string issues
-            gear_score_val = personal_rec['gear_score']
-            if gear_score_val >= 80:
-                gear_color = '#10b981'
-            elif gear_score_val >= 60:
-                gear_color = '#f59e0b'
-            else:
-                gear_color = '#dc2626'
-            
-            # Get values for display
-            terrain_limit = personal_rec['terrain_limit']
-            risk_tol = st.session_state.user_profile['risk_tolerance']
-            experience = personal_rec['experience']
-            group_size = personal_rec['group_size']
-            trip_type = st.session_state.user_profile['trip_type']
-            eff_prob = personal_rec['effective_probability']*100
-            group_text = 'person' if group_size == 1 else 'people'
-            
-            # Main decision header
-            st.markdown(f"""
-            <div style="background: {bg_color}; border: 2px solid {decision_color}; 
-                        border-radius: 12px; padding: 1.25rem; margin: 0.5rem 0;">
-                <div style="display: flex; justify-content: space-between; align-items: center;">
-                    <div>
-                        <div style="font-size: 2rem; font-weight: 700; color: {decision_color};">
-                            {decision_icon} {decision}
-                        </div>
-                        <div style="font-size: 0.85rem; color: #6b7280; margin-top: 0.25rem;">
-                            For your profile: {experience} · {group_size} {group_text} · {trip_type}
-                        </div>
-                    </div>
-                    <div style="text-align: right;">
-                        <div style="font-size: 0.75rem; color: #6b7280;">Adjusted Risk</div>
-                        <div style="font-size: 1.5rem; font-weight: 600; color: {decision_color};">
-                            {eff_prob:.0f}%
-                        </div>
-                    </div>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            # Stats row using native Streamlit columns
-            stat_col1, stat_col2, stat_col3 = st.columns(3)
-            with stat_col1:
-                st.metric("Gear Score", f"{gear_score_val}%")
-            with stat_col2:
-                st.metric("Max Slope", f"{terrain_limit}°")
-            with stat_col3:
-                st.metric("Risk Tolerance", risk_tol)
-            
-            # Warnings (if any)
-            if warning_list:
-                for warning in warning_list:
-                    st.markdown(f"""
-                    <div style="background: #fef2f2; border-left: 4px solid #dc2626;
-                                padding: 0.75rem 1rem; border-radius: 0 8px 8px 0; margin: 0.5rem 0;
-                                font-size: 0.9rem; color: #991b1b;">
-                        <strong>⚠️</strong> {warning}
-                    </div>
-                    """, unsafe_allow_html=True)
-            
-            # Personalized advice points
-            if advice_list:
-                with st.expander("📝 Personalized Recommendations", expanded=True):
-                    for i, advice in enumerate(advice_list, 1):
-                        st.markdown(f"""
-                        <div style="display: flex; align-items: flex-start; gap: 0.5rem; margin: 0.5rem 0;">
-                            <span style="background: #e0e7ff; color: #3730a3; width: 22px; height: 22px; 
-                                        border-radius: 50%; display: flex; align-items: center; justify-content: center;
-                                        font-size: 0.75rem; font-weight: 600; flex-shrink: 0;">{i}</span>
-                            <span style="color: #374151;">{advice}</span>
-                        </div>
-                        """, unsafe_allow_html=True)
-            
-            # Disclaimer
-            st.caption("*Recommendations based on your profile settings. Always use your own judgment.*")
-        
-        else:
-            # Prompt to set up profile
-            st.markdown("---")
-            st.markdown("""
-            <div style="background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%); 
-                        border: 1px solid #93c5fd; border-radius: 12px; padding: 1.25rem; margin: 0.5rem 0;">
-                <div style="display: flex; align-items: center; gap: 1rem;">
-                    <span style="font-size: 2rem;">👤</span>
-                    <div>
-                        <strong style="color: #1e40af;">Get Personalized Recommendations</strong><br>
-                        <span style="font-size: 0.9rem; color: #3b82f6;">
-                            Set up your risk profile in the sidebar to receive advice tailored to your 
-                            experience level, gear, and group size.
-                        </span>
-                    </div>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        # ============================================
-        # NATURAL LANGUAGE SUMMARY
-        # ============================================
-        st.markdown("---")
-        st.markdown("### 📋 Conditions Summary")
-        
-        # Generate the natural language summary
-        summary_text, key_factors = generate_risk_summary(
-            results, 
-            st.session_state.env_data,
-            st.session_state.wind_loading_results,
-            loc
-        )
-        
-        st.markdown(f"""
-        <div style="background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%); 
-                    border-radius: 12px; padding: 1.25rem; margin: 0.5rem 0;
-                    border: 1px solid #e2e8f0; line-height: 1.7;">
-            {summary_text}
-        </div>
-        """, unsafe_allow_html=True)
-        
-        # Key factors pills (if any)
-        if key_factors:
-            st.markdown("**Key Risk Factors:**")
-            factors_html = " ".join([
-                f'<span style="display: inline-block; background: #fef3c7; color: #92400e; '
-                f'padding: 0.25rem 0.75rem; border-radius: 9999px; font-size: 0.8rem; '
-                f'margin: 0.25rem 0.125rem; border: 1px solid #fcd34d;">{factor}</span>'
-                for factor in key_factors
-            ])
-            st.markdown(factors_html, unsafe_allow_html=True)
-        
-        # ============================================
-        # NATURAL LANGUAGE Q&A (AI-POWERED)
-        # ============================================
-        st.markdown("---")
-        st.markdown("### 🤖 Ask AI About Conditions")
-        st.caption("Ask anything about today's avalanche conditions - powered by AI with real-time data")
-        
-        # Initialize Q&A history in session state
-        if 'qa_history' not in st.session_state:
-            st.session_state.qa_history = []
-        
-        # Helper function to convert markdown to HTML
-        def convert_md_to_html(text):
-            """Convert markdown formatting to HTML for proper display."""
-            import re
-            # Convert **bold** to <strong>
-            text = re.sub(r'\*\*([^*]+)\*\*', r'<strong>\1</strong>', text)
-            # Convert *italic* to <em>
-            text = re.sub(r'\*([^*]+)\*', r'<em>\1</em>', text)
-            # Convert bullet points
-            text = re.sub(r'^[\-•]\s*', '• ', text, flags=re.MULTILINE)
-            # Convert newlines to <br> for HTML display
-            text = text.replace('\n\n', '<br><br>').replace('\n', '<br>')
-            return text
-        
-        # Text input for custom questions
-        col_input, col_btn = st.columns([5, 1])
-        with col_input:
-            user_question = st.text_input(
-                "Your question",
-                value=st.session_state.get('current_question', ''),
-                placeholder="Ask anything about conditions, safety, gear, terrain...",
-                key="qa_input",
-                label_visibility="collapsed"
-            )
-        with col_btn:
-            ask_button = st.button("Ask 🤖", type="primary", use_container_width=True, key="ask_btn")
-        
-        # Clear the stored question after using it
-        if 'current_question' in st.session_state:
-            del st.session_state.current_question
-        
-        # Process question with AI
-        if ask_button and user_question:
-            with st.spinner("🤖 AI is analyzing conditions..."):
-                answer, answer_type = ask_avalanche_ai(
-                    user_question,
-                    results,
-                    st.session_state.env_data,
-                    st.session_state.wind_loading_results,
-                    loc,
-                    st.session_state.user_profile
-                )
-            
-            # Convert markdown to HTML before storing
-            answer_html = convert_md_to_html(answer)
-            
-            # Add to history (keep last 5)
-            st.session_state.qa_history.insert(0, {
-                'question': user_question,
-                'answer': answer_html,
-                'answer_raw': answer,  # Keep raw for expander
-                'type': answer_type
-            })
-            st.session_state.qa_history = st.session_state.qa_history[:5]
-            st.rerun()
-        
-        # Display Q&A history
-        if st.session_state.qa_history:
-            for i, qa in enumerate(st.session_state.qa_history):
-                # Determine colors based on answer type
-                if qa['type'] == 'error':
-                    bg_color = '#fef2f2'
-                    border_color = '#dc2626'
-                    icon = '🛑'
-                elif qa['type'] == 'warning':
-                    bg_color = '#fffbeb'
-                    border_color = '#f59e0b'
-                    icon = '⚠️'
-                elif qa['type'] == 'success':
-                    bg_color = '#f0fdf4'
-                    border_color = '#10b981'
-                    icon = '✅'
-                else:
-                    bg_color = '#f0f9ff'
-                    border_color = '#3b82f6'
-                    icon = 'ℹ️'
+            with st.expander("👤 Your Personal Assessment", expanded=True):
+                decision = personal_rec['decision']
+                decision_color = personal_rec['decision_color']
+                decision_icon = personal_rec['decision_icon']
+                
+                bg_colors = {
+                    'NO-GO': '#fef2f2',
+                    'NOT RECOMMENDED': '#fff7ed',
+                    'PROCEED WITH CAUTION': '#fffbeb',
+                    'ACCEPTABLE': '#f0fdf4'
+                }
+                bg_color = bg_colors.get(decision, '#f9fafb')
+                
+                gear_score_val = personal_rec['gear_score']
+                terrain_limit = personal_rec['terrain_limit']
+                risk_tol = st.session_state.user_profile['risk_tolerance']
+                experience = personal_rec['experience']
+                group_size = personal_rec['group_size']
+                trip_type = st.session_state.user_profile['trip_type']
+                eff_prob = personal_rec['effective_probability']*100
+                group_text = 'person' if group_size == 1 else 'people'
                 
                 st.markdown(f"""
-                <div style="background: #f8fafc; border-radius: 12px; padding: 1rem; margin: 0.75rem 0;
-                            border: 1px solid #e2e8f0;">
-                    <div style="color: #6b7280; font-size: 0.85rem; margin-bottom: 0.5rem;">
-                        <strong>Q:</strong> {qa['question']}
-                    </div>
-                    <div style="background: {bg_color}; border-left: 4px solid {border_color};
-                                padding: 0.75rem 1rem; border-radius: 0 8px 8px 0; line-height: 1.6;">
-                        <span style="font-size: 1.1rem; margin-right: 0.5rem;">{icon}</span>
-                        {qa['answer']}
+                <div style="background: {bg_color}; border: 2px solid {decision_color}; 
+                            border-radius: 12px; padding: 1.25rem; margin: 0.5rem 0;">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <div style="font-size: 2rem; font-weight: 700; color: {decision_color};">
+                                {decision_icon} {decision}
+                            </div>
+                            <div style="font-size: 0.85rem; color: #6b7280; margin-top: 0.25rem;">
+                                {experience} · {group_size} {group_text} · {trip_type}
+                            </div>
+                        </div>
+                        <div style="text-align: right;">
+                            <div style="font-size: 0.75rem; color: #6b7280;">Adjusted Risk</div>
+                            <div style="font-size: 1.5rem; font-weight: 600; color: {decision_color};">
+                                {eff_prob:.0f}%
+                            </div>
+                        </div>
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
                 
-                if i == 0 and len(st.session_state.qa_history) > 1:
-                    with st.expander(f"Previous questions ({len(st.session_state.qa_history) - 1} more)"):
+                stat_col1, stat_col2, stat_col3 = st.columns(3)
+                with stat_col1:
+                    st.metric("Gear Score", f"{gear_score_val}%")
+                with stat_col2:
+                    st.metric("Max Slope", f"{terrain_limit}°")
+                with stat_col3:
+                    st.metric("Risk Tolerance", risk_tol)
+                
+                if warning_list:
+                    for warning in warning_list:
+                        st.markdown(f"""
+                        <div style="background: #fef2f2; border-left: 4px solid #dc2626;
+                                    padding: 0.75rem 1rem; border-radius: 0 8px 8px 0; margin: 0.5rem 0;
+                                    font-size: 0.9rem; color: #991b1b;">
+                            <strong>⚠️</strong> {warning}
+                        </div>
+                        """, unsafe_allow_html=True)
+                
+                if advice_list:
+                    st.markdown("**Recommendations for you:**")
+                    for i, advice in enumerate(advice_list, 1):
+                        st.markdown(f"{i}. {advice}")
+        else:
+            with st.expander("👤 Personalize Your Assessment"):
+                st.markdown("""
+                <div style="background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%); 
+                            border-radius: 12px; padding: 1.25rem;">
+                    <strong style="color: #1e40af;">Get Personalized Recommendations</strong><br>
+                    <span style="font-size: 0.9rem; color: #3b82f6;">
+                        Set up your risk profile in the sidebar (👤 Your Risk Profile) to receive 
+                        advice tailored to your experience level, gear, and group size.
+                    </span>
+                </div>
+                """, unsafe_allow_html=True)
+        
+        # -------------------------------------------
+        # SECTION 3: AI ASSISTANT
+        # -------------------------------------------
+        with st.expander("🤖 Ask AI About Conditions", expanded=False):
+            st.caption("Ask anything in plain English - the AI has access to all current data")
+            
+            if 'qa_history' not in st.session_state:
+                st.session_state.qa_history = []
+            
+            col_input, col_btn = st.columns([5, 1])
+            with col_input:
+                user_question = st.text_input(
+                    "Your question",
+                    value=st.session_state.get('current_question', ''),
+                    placeholder="e.g., Is it safe to ski the north bowl today?",
+                    key="qa_input",
+                    label_visibility="collapsed"
+                )
+            with col_btn:
+                ask_button = st.button("Ask", type="primary", use_container_width=True, key="ask_btn")
+            
+            if 'current_question' in st.session_state:
+                del st.session_state.current_question
+            
+            if ask_button and user_question:
+                with st.spinner("🤖 Analyzing..."):
+                    answer, answer_type = ask_avalanche_ai(
+                        user_question,
+                        results,
+                        st.session_state.env_data,
+                        st.session_state.wind_loading_results,
+                        loc,
+                        st.session_state.user_profile
+                    )
+                
+                answer_html = convert_md_to_html(answer)
+                st.session_state.qa_history.insert(0, {
+                    'question': user_question,
+                    'answer': answer_html,
+                    'answer_raw': answer,
+                    'type': answer_type
+                })
+                st.session_state.qa_history = st.session_state.qa_history[:5]
+                st.rerun()
+            
+            if st.session_state.qa_history:
+                for i, qa in enumerate(st.session_state.qa_history):
+                    if qa['type'] == 'error':
+                        bg_color, border_color, icon = '#fef2f2', '#dc2626', '🛑'
+                    elif qa['type'] == 'warning':
+                        bg_color, border_color, icon = '#fffbeb', '#f59e0b', '⚠️'
+                    elif qa['type'] == 'success':
+                        bg_color, border_color, icon = '#f0fdf4', '#10b981', '✅'
+                    else:
+                        bg_color, border_color, icon = '#f0f9ff', '#3b82f6', 'ℹ️'
+                    
+                    st.markdown(f"""
+                    <div style="background: #f8fafc; border-radius: 12px; padding: 1rem; margin: 0.5rem 0;
+                                border: 1px solid #e2e8f0;">
+                        <div style="color: #6b7280; font-size: 0.85rem; margin-bottom: 0.5rem;">
+                            <strong>Q:</strong> {qa['question']}
+                        </div>
+                        <div style="background: {bg_color}; border-left: 4px solid {border_color};
+                                    padding: 0.75rem 1rem; border-radius: 0 8px 8px 0; line-height: 1.6;">
+                            {icon} {qa['answer']}
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    if i == 0:
+                        break  # Only show most recent
+                
+                if len(st.session_state.qa_history) > 1:
+                    with st.expander(f"Previous questions ({len(st.session_state.qa_history) - 1})"):
                         for qa2 in st.session_state.qa_history[1:]:
                             st.markdown(f"**Q:** {qa2['question']}")
                             st.markdown(qa2.get('answer_raw', qa2['answer']))
                             st.markdown("---")
-                    break  # Only show latest answer prominently
-        else:
-            # Show helpful prompt when no questions asked yet
-            st.markdown("""
-            <div style="background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%); 
-                        border: 1px dashed #7dd3fc; border-radius: 12px; padding: 1.25rem; 
-                        text-align: center; color: #0369a1;">
-                <div style="font-size: 1.5rem; margin-bottom: 0.5rem;">🤖</div>
-                <strong>AI Assistant Ready</strong><br>
-                <span style="font-size: 0.9rem;">
-                    Ask me anything about today's conditions, safety recommendations, 
-                    which terrain to avoid, or get personalized advice based on your profile.
-                </span>
-            </div>
-            """, unsafe_allow_html=True)
         
-        # ============================================
-        # SAFE ALTERNATIVE SUGGESTIONS
-        # ============================================
+        # -------------------------------------------
+        # SECTION 4: SAFER ALTERNATIVES (if elevated risk)
+        # -------------------------------------------
         if results['risk_level'] in ['HIGH', 'MODERATE']:
-            st.markdown("---")
-            st.markdown("### 🗺️ Safer Alternative Terrain")
-            st.caption("Based on current wind loading and conditions, these nearby areas may offer lower risk:")
-            
-            alternatives = find_safe_alternatives(
-                loc['latitude'],
-                loc['longitude'],
-                results['avalanche_probability'],
-                st.session_state.wind_loading_results
-            )
-            
-            if alternatives:
-                # Display alternatives in columns
-                cols = st.columns(min(len(alternatives), 4))
+            with st.expander("🗺️ Safer Alternative Terrain", expanded=False):
+                st.caption("Nearby areas that may offer lower risk based on current conditions")
                 
-                for i, alt in enumerate(alternatives):
-                    with cols[i % 4]:
-                        # Color based on risk level
-                        if alt['risk_level'] == 'LOW':
-                            card_bg = '#f0fdf4'
-                            card_border = '#10b981'
-                            badge_bg = '#dcfce7'
-                            badge_color = '#166534'
-                        elif alt['risk_level'] == 'MODERATE':
-                            card_bg = '#fffbeb'
-                            card_border = '#f59e0b'
-                            badge_bg = '#fef3c7'
-                            badge_color = '#92400e'
-                        else:
-                            card_bg = '#fef2f2'
-                            card_border = '#ef4444'
-                            badge_bg = '#fee2e2'
-                            badge_color = '#991b1b'
-                        
-                        st.markdown(f"""
-                        <div style="background: {card_bg}; border: 2px solid {card_border}; 
-                                    border-radius: 10px; padding: 1rem; height: 100%; min-height: 180px;">
-                            <div style="font-weight: 600; color: #1f2937; margin-bottom: 0.5rem; font-size: 0.95rem;">
+                alternatives = find_safe_alternatives(
+                    loc['latitude'],
+                    loc['longitude'],
+                    results['avalanche_probability'],
+                    st.session_state.wind_loading_results
+                )
+                
+                if alternatives:
+                    # Display alternatives in columns
+                    cols = st.columns(min(len(alternatives), 4))
+                    
+                    for i, alt in enumerate(alternatives):
+                        with cols[i % 4]:
+                            # Color based on risk level
+                            if alt['risk_level'] == 'LOW':
+                                card_bg = '#f0fdf4'
+                                card_border = '#10b981'
+                                badge_bg = '#dcfce7'
+                                badge_color = '#166534'
+                            elif alt['risk_level'] == 'MODERATE':
+                                card_bg = '#fffbeb'
+                                card_border = '#f59e0b'
+                                badge_bg = '#fef3c7'
+                                badge_color = '#92400e'
+                            else:
+                                card_bg = '#fef2f2'
+                                card_border = '#ef4444'
+                                badge_bg = '#fee2e2'
+                                badge_color = '#991b1b'
+                            
+                            st.markdown(f"""
+                            <div style="background: {card_bg}; border: 2px solid {card_border}; 
+                                        border-radius: 10px; padding: 1rem; height: 100%; min-height: 180px;">
+                                <div style="font-weight: 600; color: #1f2937; margin-bottom: 0.5rem; font-size: 0.95rem;">
                                 {alt['name']}
+                                </div>
+                                <div style="background: {badge_bg}; color: {badge_color}; 
+                                            display: inline-block; padding: 0.2rem 0.6rem; 
+                                            border-radius: 4px; font-size: 0.75rem; font-weight: 600;
+                                            margin-bottom: 0.5rem;">
+                                    {alt['risk_level']} · {alt['estimated_risk']*100:.0f}%
+                                </div>
+                                <div style="font-size: 0.8rem; color: #059669; font-weight: 500; margin-bottom: 0.25rem;">
+                                    ↓ {alt['risk_reduction']:.0f}% lower risk
+                                </div>
+                                <div style="font-size: 0.75rem; color: #6b7280; line-height: 1.4;">
+                                    {alt['reason']}
+                                </div>
                             </div>
-                            <div style="background: {badge_bg}; color: {badge_color}; 
-                                        display: inline-block; padding: 0.2rem 0.6rem; 
-                                        border-radius: 4px; font-size: 0.75rem; font-weight: 600;
-                                        margin-bottom: 0.5rem;">
-                                {alt['risk_level']} · {alt['estimated_risk']*100:.0f}%
-                            </div>
-                            <div style="font-size: 0.8rem; color: #059669; font-weight: 500; margin-bottom: 0.25rem;">
-                                ↓ {alt['risk_reduction']:.0f}% lower risk
-                            </div>
-                            <div style="font-size: 0.75rem; color: #6b7280; line-height: 1.4;">
-                                {alt['reason']}
-                            </div>
-                        </div>
-                        """, unsafe_allow_html=True)
-                
-                # Option to view on map
-                with st.expander("🗺️ View alternatives on map"):
-                    alt_map = folium.Map(
-                        location=[loc['latitude'], loc['longitude']],
-                        zoom_start=13,
-                        tiles='OpenTopoMap'
-                    )
+                            """, unsafe_allow_html=True)
                     
-                    # Current location marker (red)
-                    folium.Marker(
-                        [loc['latitude'], loc['longitude']],
-                        popup=f"Current Location<br>Risk: {results['avalanche_probability']*100:.0f}%",
-                        icon=folium.Icon(color='red', icon='exclamation-triangle', prefix='fa'),
-                        tooltip="Current location (Higher risk)"
-                    ).add_to(alt_map)
-                    
-                    # Alternative location markers
-                    colors = {'LOW': 'green', 'MODERATE': 'orange', 'HIGH': 'red'}
-                    for alt in alternatives:
+                    # Option to view on map
+                    with st.expander("🗺️ View alternatives on map"):
+                        alt_map = folium.Map(
+                            location=[loc['latitude'], loc['longitude']],
+                            zoom_start=13,
+                            tiles='OpenTopoMap'
+                        )
+                        
+                        # Current location marker (red)
                         folium.Marker(
-                            [alt['lat'], alt['lon']],
-                            popup=f"{alt['name']}<br>Risk: {alt['estimated_risk']*100:.0f}%<br>{alt['reason']}",
-                            icon=folium.Icon(color=colors.get(alt['risk_level'], 'blue'), icon='check', prefix='fa'),
-                            tooltip=f"{alt['name']} ({alt['risk_level']})"
+                            [loc['latitude'], loc['longitude']],
+                            popup=f"Current Location<br>Risk: {results['avalanche_probability']*100:.0f}%",
+                            icon=folium.Icon(color='red', icon='exclamation-triangle', prefix='fa'),
+                            tooltip="Current location (Higher risk)"
                         ).add_to(alt_map)
-                    
-                    # Draw connections
-                    for alt in alternatives:
-                        folium.PolyLine(
-                            [[loc['latitude'], loc['longitude']], [alt['lat'], alt['lon']]],
-                            color='#6b7280',
-                            weight=1,
-                            opacity=0.5,
-                            dash_array='5, 10'
-                        ).add_to(alt_map)
-                    
-                    st_folium(alt_map, width=None, height=350, key="alternatives_map")
-            else:
-                st.info("Current location already has the lowest risk in the surrounding area.")
+                        
+                        # Alternative location markers
+                        colors = {'LOW': 'green', 'MODERATE': 'orange', 'HIGH': 'red'}
+                        for alt in alternatives:
+                            folium.Marker(
+                                [alt['lat'], alt['lon']],
+                                popup=f"{alt['name']}<br>Risk: {alt['estimated_risk']*100:.0f}%<br>{alt['reason']}",
+                                icon=folium.Icon(color=colors.get(alt['risk_level'], 'blue'), icon='check', prefix='fa'),
+                                tooltip=f"{alt['name']} ({alt['risk_level']})"
+                            ).add_to(alt_map)
+                        
+                        # Draw connections
+                        for alt in alternatives:
+                            folium.PolyLine(
+                                [[loc['latitude'], loc['longitude']], [alt['lat'], alt['lon']]],
+                                color='#6b7280',
+                                weight=1,
+                                opacity=0.5,
+                                dash_array='5, 10'
+                            ).add_to(alt_map)
+                        
+                        st_folium(alt_map, width=None, height=350, key="alternatives_map")
+                else:
+                    st.info("Current location already has the lowest risk in the surrounding area.")
         
+        # -------------------------------------------
+        # SECTION 5: DETAILED DATA (Tabs)
+        # -------------------------------------------
         st.markdown("---")
-        
-        # ============================================
-        # TABS FOR ORGANIZED CONTENT
-        # ============================================
+        st.markdown("### 📊 Detailed Forecast & Conditions")
         tab_forecast, tab_wind, tab_conditions, tab_live, tab_details = st.tabs([
             "📅 7-Day Forecast", "💨 Wind Loading", "🌡️ Current Conditions", "📷 Live View", "ℹ️ Details"
         ])
@@ -5677,8 +5608,8 @@ else:
                                 'Gusts': [format_forecast_wind(d.get('wind_gust', 0)) for d in daily]
                             })
                             st.dataframe(weather_df, hide_index=True, use_container_width=True)
-                else:
-                    st.info("Forecast data not available for this location")
+            else:
+                st.info("Forecast data not available for this location")
         
         # TAB 2: Wind Loading
         with tab_wind:
@@ -6072,8 +6003,6 @@ else:
             
             st.markdown("---")
             st.caption("⚠️ This tool provides estimates and should not replace professional avalanche forecasts. Always check with local avalanche centers.")
-        
-        st.markdown("---")
     
     # ============================================
     # SECTION 2: LOCATION SELECTION (when no results or user wants to change)
