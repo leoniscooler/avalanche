@@ -3099,11 +3099,18 @@ def create_route_map(route_analysis, center_lat=None, center_lon=None):
 # 7-DAY AVALANCHE RISK FORECAST
 # ============================================
 
-def fetch_7day_forecast(lat, lon):
-    """Fetch 7-day weather forecast data from Open-Meteo for avalanche risk prediction."""
+def fetch_7day_forecast(lat, lon, current_snow_depth=0):
+    """Fetch 7-day weather forecast data from Open-Meteo for avalanche risk prediction.
+    
+    Args:
+        lat: Latitude
+        lon: Longitude  
+        current_snow_depth: Current snow depth in meters (from assessment)
+    """
     forecast_data = {
         'available': False,
-        'daily': []
+        'daily': [],
+        'current_snow_depth': current_snow_depth
     }
     
     try:
@@ -3142,21 +3149,31 @@ def fetch_7day_forecast(lat, lon):
             wind_gust = daily.get('wind_gusts_10m_max', [])
             radiation = daily.get('shortwave_radiation_sum', [])
             
+            # Track cumulative snow throughout the forecast
+            # Convert current snow depth from meters to cm for comparison
+            cumulative_snow_cm = (current_snow_depth or 0) * 100
+            
             for i, date in enumerate(dates):
+                day_snowfall = snowfall[i] if i < len(snowfall) and snowfall[i] is not None else 0
+                
                 day_data = {
                     'date': date,
                     'date_formatted': datetime.strptime(date, '%Y-%m-%d').strftime('%a %d'),
                     'temp_max': temp_max[i] if i < len(temp_max) and temp_max[i] is not None else 0,
                     'temp_min': temp_min[i] if i < len(temp_min) and temp_min[i] is not None else 0,
                     'precipitation': precip[i] if i < len(precip) and precip[i] is not None else 0,
-                    'snowfall': snowfall[i] if i < len(snowfall) and snowfall[i] is not None else 0,
+                    'snowfall': day_snowfall,
                     'wind_max': wind_max[i] if i < len(wind_max) and wind_max[i] is not None else 0,
                     'wind_gust': wind_gust[i] if i < len(wind_gust) and wind_gust[i] is not None else 0,
                     'radiation': radiation[i] if i < len(radiation) and radiation[i] is not None else 0
                 }
                 
-                # Calculate risk score for this day
-                day_data['risk_score'] = calculate_forecast_risk(day_data)
+                # Add today's snowfall to cumulative (simple model - doesn't account for melt)
+                cumulative_snow_cm += day_snowfall
+                day_data['cumulative_snow_cm'] = cumulative_snow_cm
+                
+                # Calculate risk score for this day, considering snow availability
+                day_data['risk_score'] = calculate_forecast_risk(day_data, cumulative_snow_cm)
                 day_data['risk_level'] = get_risk_level_from_score(day_data['risk_score'])
                 
                 forecast_data['daily'].append(day_data)
@@ -3169,9 +3186,18 @@ def fetch_7day_forecast(lat, lon):
     return forecast_data
 
 
-def calculate_forecast_risk(day_data):
-    """Calculate avalanche risk score for a forecast day based on weather factors."""
-    risk_score = 0.2  # Base risk
+def calculate_forecast_risk(day_data, cumulative_snow_cm=None):
+    """Calculate avalanche risk score for a forecast day based on weather factors.
+    
+    Args:
+        day_data: Dictionary with weather data for the day
+        cumulative_snow_cm: Total snow depth in cm (current + accumulated forecast snowfall)
+    """
+    # If no snow exists and none is predicted, there's no avalanche risk
+    if cumulative_snow_cm is not None and cumulative_snow_cm <= 0:
+        return 0.0
+    
+    risk_score = 0.2  # Base risk (only applies if there's snow)
     
     # Temperature factors
     temp_max = day_data.get('temp_max', 0) or 0
@@ -3198,21 +3224,22 @@ def calculate_forecast_risk(day_data):
     elif snowfall > 5:
         risk_score += 0.1
     
-    # Rain on snow is very dangerous
+    # Rain on snow is very dangerous (but only if there's snow)
     precip = day_data.get('precipitation', 0) or 0
-    if precip > 10 and temp_avg > 0:
+    if precip > 10 and temp_avg > 0 and cumulative_snow_cm and cumulative_snow_cm > 0:
         risk_score += 0.2
     
-    # High winds cause loading
+    # High winds cause loading (but only matter if there's snow to transport)
     wind_max = day_data.get('wind_max', 0) or 0
     wind_gust = day_data.get('wind_gust', 0) or 0
     
-    if wind_gust > 60:  # Extreme gusts (km/h)
-        risk_score += 0.25
-    elif wind_gust > 40:
-        risk_score += 0.15
-    elif wind_max > 25:
-        risk_score += 0.1
+    if cumulative_snow_cm and cumulative_snow_cm > 0:
+        if wind_gust > 60:  # Extreme gusts (km/h)
+            risk_score += 0.25
+        elif wind_gust > 40:
+            risk_score += 0.15
+        elif wind_max > 25:
+            risk_score += 0.1
     
     # High radiation causes surface warming
     radiation = day_data.get('radiation', 0) or 0
@@ -3224,7 +3251,9 @@ def calculate_forecast_risk(day_data):
 
 def get_risk_level_from_score(score):
     """Convert risk score to risk level string."""
-    if score >= 0.7:
+    if score <= 0:
+        return 'NONE'
+    elif score >= 0.7:
         return 'HIGH'
     elif score >= 0.4:
         return 'MODERATE'
@@ -4168,7 +4197,9 @@ else:
         with tab_forecast:
             forecast_loc = results.get('location', st.session_state.location)
             if forecast_loc:
-                forecast = fetch_7day_forecast(forecast_loc['latitude'], forecast_loc['longitude'])
+                # Pass current snow depth to forecast for accurate risk calculation
+                current_snow_depth = results.get('snow_depth', 0) or 0
+                forecast = fetch_7day_forecast(forecast_loc['latitude'], forecast_loc['longitude'], current_snow_depth)
                 
                 if forecast.get('available') and forecast.get('daily'):
                     chart_result = create_forecast_chart(forecast)
