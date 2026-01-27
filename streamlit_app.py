@@ -4975,45 +4975,46 @@ else:
             else:
                 gear_color = '#dc2626'
             
+            # Get values for display
+            terrain_limit = personal_rec['terrain_limit']
+            risk_tol = st.session_state.user_profile['risk_tolerance']
+            experience = personal_rec['experience']
+            group_size = personal_rec['group_size']
+            trip_type = st.session_state.user_profile['trip_type']
+            eff_prob = personal_rec['effective_probability']*100
+            group_text = 'person' if group_size == 1 else 'people'
+            
+            # Main decision header
             st.markdown(f"""
             <div style="background: {bg_color}; border: 2px solid {decision_color}; 
                         border-radius: 12px; padding: 1.25rem; margin: 0.5rem 0;">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
                     <div>
                         <div style="font-size: 2rem; font-weight: 700; color: {decision_color};">
                             {decision_icon} {decision}
                         </div>
                         <div style="font-size: 0.85rem; color: #6b7280; margin-top: 0.25rem;">
-                            For your profile: {personal_rec['experience']} · {personal_rec['group_size']} {'person' if personal_rec['group_size'] == 1 else 'people'} · {st.session_state.user_profile['trip_type']}
+                            For your profile: {experience} · {group_size} {group_text} · {trip_type}
                         </div>
                     </div>
                     <div style="text-align: right;">
                         <div style="font-size: 0.75rem; color: #6b7280;">Adjusted Risk</div>
                         <div style="font-size: 1.5rem; font-weight: 600; color: {decision_color};">
-                            {personal_rec['effective_probability']*100:.0f}%
+                            {eff_prob:.0f}%
                         </div>
-                    </div>
-                </div>
-                
-                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.75rem; 
-                            padding-top: 1rem; border-top: 1px solid #e5e7eb;">
-                    <div style="text-align: center;">
-                        <div style="font-size: 0.75rem; color: #6b7280;">Gear Score</div>
-                        <div style="font-size: 1.1rem; font-weight: 600; color: {gear_color};">
-                            {gear_score_val}%
-                        </div>
-                    </div>
-                    <div style="text-align: center;">
-                        <div style="font-size: 0.75rem; color: #6b7280;">Max Slope</div>
-                        <div style="font-size: 1.1rem; font-weight: 600;">{personal_rec['terrain_limit']}°</div>
-                    </div>
-                    <div style="text-align: center;">
-                        <div style="font-size: 0.75rem; color: #6b7280;">Risk Tolerance</div>
-                        <div style="font-size: 1.1rem; font-weight: 600;">{st.session_state.user_profile['risk_tolerance']}</div>
                     </div>
                 </div>
             </div>
             """, unsafe_allow_html=True)
+            
+            # Stats row using native Streamlit columns
+            stat_col1, stat_col2, stat_col3 = st.columns(3)
+            with stat_col1:
+                st.metric("Gear Score", f"{gear_score_val}%")
+            with stat_col2:
+                st.metric("Max Slope", f"{terrain_limit}°")
+            with stat_col3:
+                st.metric("Risk Tolerance", risk_tol)
             
             # Warnings (if any)
             if warning_list:
