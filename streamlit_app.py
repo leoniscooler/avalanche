@@ -4880,8 +4880,8 @@ else:
         # ============================================
         # TABS FOR ORGANIZED CONTENT
         # ============================================
-        tab_forecast, tab_wind, tab_conditions, tab_details = st.tabs([
-            "📅 7-Day Forecast", "💨 Wind Loading", "🌡️ Current Conditions", "ℹ️ Details"
+        tab_forecast, tab_wind, tab_conditions, tab_live, tab_details = st.tabs([
+            "📅 7-Day Forecast", "💨 Wind Loading", "🌡️ Current Conditions", "📷 Live View", "ℹ️ Details"
         ])
         
         # TAB 1: 7-Day Forecast
@@ -5189,7 +5189,153 @@ else:
             else:
                 st.info("No environmental data available")
         
-        # TAB 4: Details
+        # TAB 4: Live View (Satellite/Snow Imagery)
+        with tab_live:
+            loc = results.get('location', st.session_state.location)
+            if loc:
+                lat = loc.get('latitude', 0)
+                lon = loc.get('longitude', 0)
+                
+                # Current timestamp for display
+                from datetime import datetime
+                current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                
+                st.markdown(f"""
+                <div style="background: linear-gradient(135deg, #1e3a5f 0%, #2d5a87 100%); 
+                            border-radius: 12px; padding: 1rem; margin-bottom: 1rem; color: white;">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <strong style="font-size: 1.1rem;">📡 Live Weather Conditions</strong><br>
+                            <span style="font-size: 0.85rem; opacity: 0.9;">
+                                Location: {lat:.4f}°N, {lon:.4f}°E
+                            </span>
+                        </div>
+                        <div style="text-align: right;">
+                            <span style="font-size: 0.75rem; opacity: 0.8;">Last updated</span><br>
+                            <span style="font-size: 0.9rem;">{current_time}</span>
+                        </div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                # Layer selection
+                layer_options = {
+                    "snowcover": "❄️ Snow Cover",
+                    "snowAccu": "🌨️ Snow Accumulation",
+                    "satellite": "🛰️ Satellite View",
+                    "radar": "📡 Precipitation Radar",
+                    "temp": "🌡️ Temperature",
+                    "clouds": "☁️ Cloud Cover",
+                    "wind": "💨 Wind Speed"
+                }
+                
+                col1, col2 = st.columns([2, 1])
+                with col1:
+                    selected_layer = st.selectbox(
+                        "Select View Layer",
+                        options=list(layer_options.keys()),
+                        format_func=lambda x: layer_options[x],
+                        index=0,
+                        key="windy_layer_select"
+                    )
+                with col2:
+                    zoom_level = st.slider("Zoom Level", min_value=6, max_value=14, value=10, key="windy_zoom")
+                
+                # Windy.com embed - they provide embeddable weather maps
+                windy_embed_url = f"https://embed.windy.com/embed2.html?lat={lat}&lon={lon}&detailLat={lat}&detailLon={lon}&width=650&height=450&zoom={zoom_level}&level=surface&overlay={selected_layer}&product=ecmwf&menu=&message=true&marker=true&calendar=now&pressure=&type=map&location=coordinates&detail=&metricWind=default&metricTemp=default&radarRange=-1"
+                
+                # Display the Windy embed
+                st.markdown(f"""
+                <div style="border-radius: 12px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.2);">
+                    <iframe 
+                        src="{windy_embed_url}" 
+                        width="100%" 
+                        height="500" 
+                        frameborder="0"
+                        style="border-radius: 12px;">
+                    </iframe>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                # Layer description
+                layer_descriptions = {
+                    "snowcover": "Shows current snow coverage and depth estimates from satellite data. White areas indicate snow presence.",
+                    "snowAccu": "Displays forecasted snow accumulation. Useful for planning trips and understanding incoming snow events.",
+                    "satellite": "Live satellite imagery showing cloud formations, terrain, and general weather patterns.",
+                    "radar": "Real-time precipitation radar showing rain and snow movement. Updated every 5-10 minutes.",
+                    "temp": "Current surface temperature map with color gradient from cold (blue) to warm (red).",
+                    "clouds": "Cloud cover percentage and types. Useful for understanding visibility and weather conditions.",
+                    "wind": "Wind speed and direction at surface level. Important for avalanche wind loading assessment."
+                }
+                
+                st.info(f"**{layer_options[selected_layer]}:** {layer_descriptions[selected_layer]}")
+                
+                # Additional satellite image sources
+                with st.expander("🌐 Additional Satellite Resources"):
+                    st.markdown("""
+                    **Direct links to satellite imagery for this location:**
+                    """)
+                    
+                    # NASA Worldview link
+                    nasa_link = f"https://worldview.earthdata.nasa.gov/?v={lon-2},{lat-2},{lon+2},{lat+2}&l=VIIRS_SNPP_CorrectedReflectance_TrueColor,MODIS_Terra_CorrectedReflectance_TrueColor,Coastlines_15m&t={datetime.now().strftime('%Y-%m-%d')}"
+                    
+                    # Zoom Earth link
+                    zoom_earth_link = f"https://zoom.earth/#view={lat},{lon},10z/date={datetime.now().strftime('%Y-%m-%d')},pm"
+                    
+                    # Sentinel Hub
+                    sentinel_link = f"https://apps.sentinel-hub.com/eo-browser/?zoom=11&lat={lat}&lng={lon}&themeId=DEFAULT-THEME"
+                    
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.markdown(f"""
+                        <a href="{nasa_link}" target="_blank" style="text-decoration: none;">
+                            <div style="background: #1a365d; color: white; padding: 0.75rem; border-radius: 8px; text-align: center;">
+                                🛰️ NASA Worldview
+                            </div>
+                        </a>
+                        """, unsafe_allow_html=True)
+                    with col2:
+                        st.markdown(f"""
+                        <a href="{zoom_earth_link}" target="_blank" style="text-decoration: none;">
+                            <div style="background: #065f46; color: white; padding: 0.75rem; border-radius: 8px; text-align: center;">
+                                🌍 Zoom Earth
+                            </div>
+                        </a>
+                        """, unsafe_allow_html=True)
+                    with col3:
+                        st.markdown(f"""
+                        <a href="{sentinel_link}" target="_blank" style="text-decoration: none;">
+                            <div style="background: #7c3aed; color: white; padding: 0.75rem; border-radius: 8px; text-align: center;">
+                                📡 Sentinel Hub
+                            </div>
+                        </a>
+                        """, unsafe_allow_html=True)
+                    
+                    st.caption("Click above to open high-resolution satellite imagery in a new tab. These sources provide detailed snow and terrain visualization.")
+                
+                # Tips for interpreting imagery
+                with st.expander("💡 How to Read Snow Imagery"):
+                    st.markdown("""
+                    **Snow Cover Interpretation:**
+                    - **Bright white areas**: Fresh snow or significant snow depth
+                    - **Gray/blue tints**: Older snow, potentially icy or wind-affected
+                    - **Dark patches in snow**: Exposed rock, avalanche debris, or wind-scoured areas
+                    
+                    **Key Features to Look For:**
+                    - 🔺 **Avalanche paths**: Look for strip patterns down slopes
+                    - 💨 **Wind loading signs**: Cornices visible as shadows on ridgelines
+                    - 🌊 **Snow drifts**: Asymmetric snow patterns around terrain features
+                    - ⚡ **Recent activity**: Fresh debris at the bottom of slopes
+                    
+                    **Timing Notes:**
+                    - Satellite images are typically updated 1-2 times daily
+                    - Weather radar updates every 5-10 minutes
+                    - Snow cover data may be 6-24 hours old
+                    """)
+            else:
+                st.info("Select a location to view live snow conditions")
+        
+        # TAB 5: Details
         with tab_details:
             st.markdown("**Assessment Method:**")
             st.markdown("""
