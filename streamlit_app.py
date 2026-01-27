@@ -3718,6 +3718,195 @@ st.markdown("""
         }
     }
 </style>
+""")
+
+# Initialize dark mode state
+if 'dark_mode' not in st.session_state:
+    st.session_state.dark_mode = False
+
+# Dark mode CSS - injected conditionally
+if st.session_state.dark_mode:
+    st.markdown("""
+    <style>
+        /* Dark mode colors */
+        :root {
+            --bg-primary: #0f172a;
+            --bg-secondary: #1e293b;
+            --bg-card: #334155;
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --border-color: #475569;
+        }
+        
+        .stApp {
+            background-color: var(--bg-primary) !important;
+            color: var(--text-primary) !important;
+        }
+        
+        /* Main content area */
+        .main .block-container {
+            background-color: var(--bg-primary) !important;
+        }
+        
+        /* Sidebar */
+        [data-testid="stSidebar"] {
+            background-color: var(--bg-secondary) !important;
+        }
+        
+        [data-testid="stSidebar"] * {
+            color: var(--text-primary) !important;
+        }
+        
+        /* Headers and text */
+        h1, h2, h3, h4, h5, h6, p, span, label, .stMarkdown {
+            color: var(--text-primary) !important;
+        }
+        
+        .app-title {
+            color: var(--text-primary) !important;
+        }
+        
+        .app-subtitle {
+            color: var(--text-secondary) !important;
+        }
+        
+        .section-header {
+            color: var(--text-primary) !important;
+            border-bottom-color: var(--border-color) !important;
+        }
+        
+        /* Metrics */
+        [data-testid="stMetricValue"] {
+            color: var(--text-primary) !important;
+        }
+        
+        [data-testid="stMetricLabel"] {
+            color: var(--text-secondary) !important;
+        }
+        
+        [data-testid="stMetricDelta"] svg {
+            fill: var(--text-secondary) !important;
+        }
+        
+        /* Cards and containers */
+        .data-card {
+            background: var(--bg-card) !important;
+            border-color: var(--border-color) !important;
+        }
+        
+        /* Info and warning boxes */
+        .info-box {
+            background: #1e3a5f !important;
+            border-left-color: #3b82f6 !important;
+            color: #93c5fd !important;
+        }
+        
+        .warning-box {
+            background: #422006 !important;
+            border-left-color: #f59e0b !important;
+            color: #fcd34d !important;
+        }
+        
+        /* Inputs */
+        .stTextInput input, .stNumberInput input, .stSelectbox > div > div {
+            background-color: var(--bg-card) !important;
+            color: var(--text-primary) !important;
+            border-color: var(--border-color) !important;
+        }
+        
+        /* Buttons */
+        .stButton > button {
+            background-color: var(--bg-card) !important;
+            color: var(--text-primary) !important;
+            border-color: var(--border-color) !important;
+        }
+        
+        .stButton > button:hover {
+            background-color: #475569 !important;
+            border-color: #64748b !important;
+        }
+        
+        .stButton > button[kind="primary"] {
+            background-color: #3b82f6 !important;
+            border-color: #3b82f6 !important;
+            color: white !important;
+        }
+        
+        /* Expanders */
+        .streamlit-expanderHeader {
+            background-color: var(--bg-secondary) !important;
+            color: var(--text-primary) !important;
+        }
+        
+        .streamlit-expanderContent {
+            background-color: var(--bg-secondary) !important;
+            border-color: var(--border-color) !important;
+        }
+        
+        /* Tabs */
+        .stTabs [data-baseweb="tab-list"] {
+            background-color: var(--bg-secondary) !important;
+        }
+        
+        .stTabs [data-baseweb="tab"] {
+            color: var(--text-secondary) !important;
+        }
+        
+        .stTabs [aria-selected="true"] {
+            color: var(--text-primary) !important;
+        }
+        
+        /* Dataframes */
+        [data-testid="stDataFrame"] {
+            background-color: var(--bg-card) !important;
+        }
+        
+        [data-testid="stDataFrame"] th {
+            background-color: var(--bg-secondary) !important;
+            color: var(--text-primary) !important;
+        }
+        
+        [data-testid="stDataFrame"] td {
+            background-color: var(--bg-card) !important;
+            color: var(--text-primary) !important;
+        }
+        
+        /* Success/Warning/Error messages */
+        .stSuccess {
+            background-color: #064e3b !important;
+            color: #6ee7b7 !important;
+        }
+        
+        .stWarning {
+            background-color: #78350f !important;
+            color: #fcd34d !important;
+        }
+        
+        .stInfo {
+            background-color: #1e3a5f !important;
+            color: #93c5fd !important;
+        }
+        
+        /* Dividers */
+        hr {
+            border-color: var(--border-color) !important;
+        }
+        
+        /* Captions */
+        .stCaption, small {
+            color: var(--text-secondary) !important;
+        }
+        
+        /* Charts background */
+        [data-testid="stVegaLiteChart"] {
+            background-color: var(--bg-card) !important;
+            border-radius: 8px;
+            padding: 0.5rem;
+        }
+    </style>
+    """, unsafe_allow_html=True)
+else:
+    st.markdown("""
 """, unsafe_allow_html=True)
 
 # Header
@@ -4586,6 +4775,15 @@ else:
             st.session_state.wind_loading_results = None
 
 # Sidebar - minimal and clean
+st.sidebar.markdown("### Settings")
+
+# Dark mode toggle
+dark_mode = st.sidebar.toggle("🌙 Dark Mode", value=st.session_state.dark_mode, key="dark_mode_toggle")
+if dark_mode != st.session_state.dark_mode:
+    st.session_state.dark_mode = dark_mode
+    st.rerun()
+
+st.sidebar.markdown("---")
 st.sidebar.markdown("### About")
 st.sidebar.markdown("""
 This tool uses a **Physics-Informed Neural Network (PINN)** trained to assess avalanche risk by integrating real-time satellite and weather station data with physical snowpack mechanics.
