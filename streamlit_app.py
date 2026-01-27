@@ -1556,7 +1556,15 @@ def fetch_weather_data(lat, lon):
         response = session.get(current_url, params=params, timeout=DEFAULT_TIMEOUT)
         
         if response.status_code == 200:
-            return response.json()
+            data = response.json()
+            # Verify the API returned data for our exact coordinates
+            # Open-Meteo snaps to its grid, so we log the actual coords used
+            api_lat = data.get('latitude', lat)
+            api_lon = data.get('longitude', lon)
+            data['_requested_coords'] = {'lat': lat, 'lon': lon}
+            data['_actual_coords'] = {'lat': api_lat, 'lon': api_lon}
+            data['_coord_offset_km'] = ((api_lat - lat)**2 + (api_lon - lon)**2)**0.5 * 111  # Approx km
+            return data
         else:
             st.warning(f"Weather API returned status {response.status_code}")
             return None
@@ -2522,6 +2530,12 @@ def fetch_wind_data_for_analysis(lat, lon):
         if response.status_code == 200:
             data = response.json()
             
+            # Store verified coordinates for data accuracy
+            wind_data['api_latitude'] = data.get('latitude', lat)
+            wind_data['api_longitude'] = data.get('longitude', lon)
+            wind_data['requested_lat'] = lat
+            wind_data['requested_lon'] = lon
+            
             # Current wind
             current = data.get('current', {})
             wind_data['current_direction'] = current.get('wind_direction_10m')
@@ -3138,6 +3152,13 @@ def fetch_7day_forecast(lat, lon, current_snow_depth=0):
         
         if response.status_code == 200:
             data = response.json()
+            
+            # Store the actual coordinates used by the API for verification
+            forecast_data['api_latitude'] = data.get('latitude', lat)
+            forecast_data['api_longitude'] = data.get('longitude', lon)
+            forecast_data['requested_lat'] = lat
+            forecast_data['requested_lon'] = lon
+            
             daily = data.get('daily', {})
             
             dates = daily.get('time', [])
@@ -4942,22 +4963,85 @@ else:
             if st.session_state.env_data:
                 env = st.session_state.env_data
                 
+                # Show data verification info
+                if st.session_state.satellite_raw:
+                    raw = st.session_state.satellite_raw
+                    data_loc = raw.get('location', {})
+                    timestamp = raw.get('timestamp', 'Unknown')
+                    
+                    # Check if Open-Meteo returned different coords
+                    weather_data = raw.get('sources', {}).get('Open-Meteo (Real-time)', {})
+                    coord_note = ""
+                    if weather_data and '_actual_coords' in weather_data:
+                        actual = weather_data['_actual_coords']
+                        requested = weather_data['_requested_coords']
+                        offset_km = weather_data.get('_coord_offset_km', 0)
+                        if offset_km > 0.5:
+                            coord_note = f"<br><span style='color: #f59e0b;'>⚠️ API grid offset: ~{offset_km:.1f}km from exact point</span>"
+                    
+                    st.markdown(f"""
+                    <div style="background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 8px; 
+                                padding: 0.75rem; margin-bottom: 1rem; font-size: 0.85rem;">
+                        <strong>📍 Data Location:</strong> {data_loc.get('lat', 0):.4f}°N, {data_loc.get('lon', 0):.4f}°E<br>
+                        <strong>⏱️ Last Updated:</strong> {timestamp[:19] if len(timestamp) > 19 else timestamp}{coord_note}
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                # Get data sources for attribution
+                data_sources_dict = {}
+                if st.session_state.data_sources:
+                    for param, source in st.session_state.data_sources:
+                        data_sources_dict[param] = source
+                
                 col1, col2, col3, col4 = st.columns(4)
                 with col1:
                     temp = env.get('TA') or 0
+                    temp_source = data_sources_dict.get('TA', 'Unknown')
                     st.metric("Temperature", f"{temp:.1f}°C")
+                    st.caption(f"📡 {temp_source}")
                 with col2:
                     snow = (env.get('max_height') or 0) * 100
                     snow_change = (env.get('max_height_1_diff') or 0) * 100
+                    snow_source = data_sources_dict.get('max_height', 'Unknown')
                     st.metric("Snow Depth", f"{snow:.0f} cm", delta=f"{snow_change:+.0f}/24h")
+                    st.caption(f"📡 {snow_source}")
                 with col3:
                     radiation = env.get('ISWR_daily') or 0
+                    rad_source = data_sources_dict.get('ISWR_daily', 'Unknown')
                     st.metric("Solar Radiation", f"{radiation:.0f} W/m²")
+                    st.caption(f"📡 {rad_source}")
                 with col4:
                     stability = env.get('S5') or 2.5
                     st.metric("Stability Index", f"{stability:.2f}")
+                    st.caption("📡 Calculated")
+                
+                # Additional weather metrics with sources
+                st.markdown("---")
+                st.markdown("**Additional Conditions:**")
+                
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    temp_daily = env.get('TA_daily') or 0
+                    daily_source = data_sources_dict.get('TA_daily', 'Unknown')
+                    st.metric("Daily Avg Temp", f"{temp_daily:.1f}°C")
+                    st.caption(f"📡 {daily_source}")
+                with col2:
+                    rain = env.get('MS_Rain_daily') or 0
+                    rain_source = data_sources_dict.get('MS_Rain_daily', 'Unknown')
+                    st.metric("Precip (24h)", f"{rain:.1f} mm")
+                    st.caption(f"📡 {rain_source}")
+                with col3:
+                    swe = env.get('SWE_daily') or 0
+                    swe_source = data_sources_dict.get('SWE_daily', 'Unknown')
+                    st.metric("Snow Water Equiv", f"{swe:.0f} mm")
+                    st.caption(f"📡 {swe_source}")
+                with col4:
+                    lwc = env.get('mean_lwc') or 0
+                    st.metric("Liquid Water", f"{lwc:.1f}%")
+                    st.caption("📡 Calculated")
                 
                 # Stability interpretation
+                st.markdown("---")
                 if stability < 1.0:
                     st.warning("⚠️ Very low stability - high avalanche potential")
                 elif stability < 1.5:
@@ -4966,6 +5050,24 @@ else:
                     st.info("Moderate stability - some avalanche potential")
                 else:
                     st.success("Good stability - lower avalanche potential")
+                
+                # Data quality summary
+                with st.expander("📊 Data Sources & Quality"):
+                    if st.session_state.data_sources:
+                        st.markdown("**Data sources used for this assessment:**")
+                        
+                        # Group by source type
+                        sources_by_type = {}
+                        for param, source in st.session_state.data_sources:
+                            if source not in sources_by_type:
+                                sources_by_type[source] = []
+                            sources_by_type[source].append(param)
+                        
+                        for source, params in sorted(sources_by_type.items()):
+                            params_str = ", ".join(params[:5])
+                            if len(params) > 5:
+                                params_str += f" (+{len(params)-5} more)"
+                            st.markdown(f"• **{source}**: {params_str}")
             else:
                 st.info("No environmental data available")
         
@@ -5471,7 +5573,8 @@ if analysis_mode == "📍 Single Point":
             'temperature': st.session_state.inputs.get('TA', 0),
             'snow_depth': st.session_state.inputs.get('max_height', 0),
             'radiation': st.session_state.inputs.get('ISWR_daily', 0),
-            'location': st.session_state.location.copy()
+            'location': st.session_state.location.copy(),
+            'assessed_at': datetime.now().isoformat()
         }
         
         # Fetch and store wind loading data
