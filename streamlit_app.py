@@ -3718,7 +3718,7 @@ st.markdown("""
         }
     }
 </style>
-""")
+""", unsafe_allow_html=True)
 
 # Initialize dark mode state
 if 'dark_mode' not in st.session_state:
