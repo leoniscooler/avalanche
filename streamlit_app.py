@@ -5128,6 +5128,506 @@ if analysis_mode == "🗺️ Route Analysis":
                     st_folium(wind_map, width=None, height=400, key="wind_loading_map")
             else:
                 st.info("Wind data not available for this location")
+        
+        # ============================================
+        # ROUTE MODE: DETAILED TABS (Same as single point)
+        # ============================================
+        st.markdown("---")
+        st.markdown("### 📊 Detailed Analysis")
+        
+        # Get representative location (route midpoint or start)
+        if st.session_state.route_waypoints:
+            mid_idx = len(st.session_state.route_waypoints) // 2
+            route_loc = {
+                'latitude': st.session_state.route_waypoints[mid_idx][0],
+                'longitude': st.session_state.route_waypoints[mid_idx][1],
+                'city': 'Route Midpoint',
+                'region': '',
+                'elevation': analysis.get('waypoint_risks', [{}])[mid_idx].get('elevation', 0) if mid_idx < len(analysis.get('waypoint_risks', [])) else 0
+            }
+        else:
+            route_loc = {'latitude': 0, 'longitude': 0, 'city': 'Unknown', 'region': '', 'elevation': 0}
+        
+        # Helper function for markdown to HTML conversion
+        def convert_md_to_html_route(text):
+            import re
+            text = re.sub(r'\*\*([^*]+)\*\*', r'<strong>\1</strong>', text)
+            text = re.sub(r'\*([^*]+)\*', r'<em>\1</em>', text)
+            text = re.sub(r'^[\-•]\s*', '• ', text, flags=re.MULTILINE)
+            text = text.replace('\n\n', '<br><br>').replace('\n', '<br>')
+            return text
+        
+        # Create mock results for route mode to use shared functions
+        route_results = {
+            'risk_level': overall_risk,
+            'avalanche_probability': summary.get('max_risk_score', 0),
+            'model_confidence': 0.7,
+            'risk_message': summary.get('overall_message', ''),
+            'location': route_loc,
+            'snow_depth': None,
+            'temperature': None
+        }
+        
+        # Create tabs
+        rt_tab_summary, rt_tab_profile, rt_tab_ai, rt_tab_alternatives, rt_tab_forecast, rt_tab_wind, rt_tab_conditions, rt_tab_live, rt_tab_details = st.tabs([
+            "📋 Summary", "👤 Personal", "🤖 Ask AI", "🗺️ Alternatives",
+            "📅 Forecast", "💨 Wind", "🌡️ Conditions", "📷 Live View", "ℹ️ Details"
+        ])
+        
+        # TAB: Route Summary
+        with rt_tab_summary:
+            # Generate summary for route
+            waypoint_risks = analysis.get('waypoint_risks', [])
+            high_risk_segments = [wp for wp in waypoint_risks if wp.get('risk_level') == 'HIGH']
+            mod_risk_segments = [wp for wp in waypoint_risks if wp.get('risk_level') == 'MODERATE']
+            
+            summary_parts = []
+            summary_parts.append(f"<strong>Route Risk Assessment:</strong> This route has been analyzed across <strong>{len(waypoint_risks)} waypoints</strong>.")
+            
+            if overall_risk == 'HIGH':
+                summary_parts.append(f"The overall risk level is <strong style='color:#dc2626;'>HIGH</strong> with <strong>{len(high_risk_segments)} high-risk segments</strong> identified.")
+                summary_parts.append("Travel along this route is <strong>not recommended</strong> under current conditions.")
+            elif overall_risk == 'MODERATE':
+                summary_parts.append(f"The overall risk level is <strong style='color:#f59e0b;'>MODERATE</strong> with <strong>{len(mod_risk_segments)} moderate-risk segments</strong>.")
+                summary_parts.append("Exercise <strong>increased caution</strong> and carry full avalanche safety equipment.")
+            else:
+                summary_parts.append(f"The overall risk level is <strong style='color:#10b981;'>LOW</strong>.")
+                summary_parts.append("Conditions appear relatively stable, but remain vigilant and carry safety gear.")
+            
+            # Add highest risk info
+            if highest:
+                summary_parts.append(f"<br><br><strong>Highest Risk Zone:</strong> Located at coordinates ({highest.get('lat', 0):.4f}, {highest.get('lon', 0):.4f}) with a risk score of <strong>{(highest.get('risk_score') or 0)*100:.0f}%</strong>.")
+                if highest.get('risk_factors'):
+                    summary_parts.append(f"Contributing factors: {', '.join(highest.get('risk_factors', []))}")
+            
+            st.markdown(f"""
+            <div style="background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%); 
+                        border-radius: 12px; padding: 1.25rem; margin: 0.5rem 0;
+                        border: 1px solid #e2e8f0; line-height: 1.7;">
+                {' '.join(summary_parts)}
+            </div>
+            """, unsafe_allow_html=True)
+            
+            # Key factors
+            key_factors = []
+            if len(high_risk_segments) > 0:
+                key_factors.append(f"{len(high_risk_segments)} High Risk Zones")
+            if len(mod_risk_segments) > 0:
+                key_factors.append(f"{len(mod_risk_segments)} Moderate Zones")
+            if start_wp and wind_data.get('available'):
+                if wind_analysis.get('loading_risk') in ['HIGH', 'EXTREME']:
+                    key_factors.append("High Wind Loading")
+            
+            if key_factors:
+                st.markdown("**Key Risk Factors:**")
+                factors_html = " ".join([
+                    f'<span style="display: inline-block; background: #fef3c7; color: #92400e; '
+                    f'padding: 0.25rem 0.75rem; border-radius: 9999px; font-size: 0.8rem; '
+                    f'margin: 0.25rem 0.125rem; border: 1px solid #fcd34d;">{factor}</span>'
+                    for factor in key_factors
+                ])
+                st.markdown(factors_html, unsafe_allow_html=True)
+        
+        # TAB: Personal Assessment
+        with rt_tab_profile:
+            personal_rec, advice_list, warning_list = generate_personalized_recommendation(
+                route_results,
+                st.session_state.get('env_data'),
+                st.session_state.get('wind_loading_results'),
+                st.session_state.user_profile
+            )
+            
+            if personal_rec:
+                decision = personal_rec['decision']
+                decision_color = personal_rec['decision_color']
+                decision_icon = personal_rec['decision_icon']
+                
+                bg_colors = {
+                    'NO-GO': '#fef2f2',
+                    'NOT RECOMMENDED': '#fff7ed',
+                    'PROCEED WITH CAUTION': '#fffbeb',
+                    'ACCEPTABLE': '#f0fdf4'
+                }
+                bg_color = bg_colors.get(decision, '#f9fafb')
+                
+                gear_score_val = personal_rec['gear_score']
+                terrain_limit = personal_rec['terrain_limit']
+                risk_tol = st.session_state.user_profile['risk_tolerance']
+                experience = personal_rec['experience']
+                group_size = personal_rec['group_size']
+                trip_type = st.session_state.user_profile['trip_type']
+                eff_prob = personal_rec['effective_probability']*100
+                group_text = 'person' if group_size == 1 else 'people'
+                
+                st.markdown(f"""
+                <div style="background: {bg_color}; border: 2px solid {decision_color}; 
+                            border-radius: 12px; padding: 1.25rem; margin: 0.5rem 0;">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <div style="font-size: 2rem; font-weight: 700; color: {decision_color};">
+                                {decision_icon} {decision}
+                            </div>
+                            <div style="font-size: 0.85rem; color: #6b7280; margin-top: 0.25rem;">
+                                {experience} · {group_size} {group_text} · {trip_type}
+                            </div>
+                        </div>
+                        <div style="text-align: right;">
+                            <div style="font-size: 0.75rem; color: #6b7280;">Adjusted Risk</div>
+                            <div style="font-size: 1.5rem; font-weight: 600; color: {decision_color};">
+                                {eff_prob:.0f}%
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                stat_col1, stat_col2, stat_col3 = st.columns(3)
+                with stat_col1:
+                    st.metric("Gear Score", f"{gear_score_val}%")
+                with stat_col2:
+                    st.metric("Max Slope", f"{terrain_limit}°")
+                with stat_col3:
+                    st.metric("Risk Tolerance", risk_tol)
+                
+                if warning_list:
+                    for warning in warning_list:
+                        st.markdown(f"""
+                        <div style="background: #fef2f2; border-left: 4px solid #dc2626;
+                                    padding: 0.75rem 1rem; border-radius: 0 8px 8px 0; margin: 0.5rem 0;
+                                    font-size: 0.9rem; color: #991b1b;">
+                            <strong>⚠️</strong> {warning}
+                        </div>
+                        """, unsafe_allow_html=True)
+                
+                if advice_list:
+                    st.markdown("**Recommendations for your route:**")
+                    for i, advice in enumerate(advice_list, 1):
+                        st.markdown(f"{i}. {advice}")
+            else:
+                st.markdown("""
+                <div style="background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%); 
+                            border-radius: 12px; padding: 1.25rem;">
+                    <strong style="color: #1e40af;">Get Personalized Recommendations</strong><br>
+                    <span style="font-size: 0.9rem; color: #3b82f6;">
+                        Set up your risk profile in the sidebar (👤 Your Risk Profile) to receive 
+                        advice tailored to your experience level, gear, and group size.
+                    </span>
+                </div>
+                """, unsafe_allow_html=True)
+        
+        # TAB: AI Assistant
+        with rt_tab_ai:
+            st.caption("Ask anything about your route - the AI has access to all analysis data")
+            
+            if 'route_qa_history' not in st.session_state:
+                st.session_state.route_qa_history = []
+            
+            col_input, col_btn = st.columns([5, 1])
+            with col_input:
+                route_question = st.text_input(
+                    "Your question",
+                    value="",
+                    placeholder="e.g., Which segments of my route should I avoid?",
+                    key="route_qa_input",
+                    label_visibility="collapsed"
+                )
+            with col_btn:
+                route_ask_btn = st.button("Ask", type="primary", use_container_width=True, key="route_ask_btn")
+            
+            if route_ask_btn and route_question:
+                with st.spinner("🤖 Analyzing your route..."):
+                    # Build route-specific context
+                    route_context = f"""
+                    ROUTE ANALYSIS DATA:
+                    - Total waypoints: {len(waypoint_risks)}
+                    - Overall risk: {overall_risk}
+                    - Max risk score: {summary.get('max_risk_score', 0)*100:.0f}%
+                    - Average risk score: {summary.get('avg_risk_score', 0)*100:.0f}%
+                    - High risk segments: {len(high_risk_segments)}
+                    - Moderate risk segments: {len(mod_risk_segments)}
+                    """
+                    if highest:
+                        route_context += f"""
+                    - Highest risk location: ({highest.get('lat', 0):.4f}, {highest.get('lon', 0):.4f})
+                    - Highest risk factors: {', '.join(highest.get('risk_factors', []))}
+                    """
+                    if start_wp and wind_data.get('available'):
+                        route_context += f"""
+                    - Wind direction: {wind_analysis.get('wind_direction_cardinal', 'N/A')}
+                    - Wind speed: {wind_speed:.1f} m/s
+                    - Wind loading risk: {wind_analysis.get('loading_risk', 'N/A')}
+                    - Danger slopes (leeward): {wind_analysis.get('leeward_cardinal', 'N/A')}-facing
+                    """
+                    
+                    answer, answer_type = ask_avalanche_ai(
+                        route_question,
+                        route_results,
+                        st.session_state.get('env_data'),
+                        {'wind_analysis': wind_analysis} if start_wp and wind_data.get('available') else None,
+                        route_loc,
+                        st.session_state.user_profile
+                    )
+                
+                answer_html = convert_md_to_html_route(answer)
+                st.session_state.route_qa_history.insert(0, {
+                    'question': route_question,
+                    'answer': answer_html,
+                    'answer_raw': answer,
+                    'type': answer_type
+                })
+                st.session_state.route_qa_history = st.session_state.route_qa_history[:5]
+                st.rerun()
+            
+            if st.session_state.route_qa_history:
+                for i, qa in enumerate(st.session_state.route_qa_history):
+                    if qa['type'] == 'error':
+                        bg_color, border_color, icon = '#fef2f2', '#dc2626', '🛑'
+                    elif qa['type'] == 'warning':
+                        bg_color, border_color, icon = '#fffbeb', '#f59e0b', '⚠️'
+                    elif qa['type'] == 'success':
+                        bg_color, border_color, icon = '#f0fdf4', '#10b981', '✅'
+                    else:
+                        bg_color, border_color, icon = '#f0f9ff', '#3b82f6', 'ℹ️'
+                    
+                    st.markdown(f"""
+                    <div style="background: #f8fafc; border-radius: 12px; padding: 1rem; margin: 0.5rem 0;
+                                border: 1px solid #e2e8f0;">
+                        <div style="color: #6b7280; font-size: 0.85rem; margin-bottom: 0.5rem;">
+                            <strong>Q:</strong> {qa['question']}
+                        </div>
+                        <div style="background: {bg_color}; border-left: 4px solid {border_color};
+                                    padding: 0.75rem 1rem; border-radius: 0 8px 8px 0; line-height: 1.6;">
+                            {icon} {qa['answer']}
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    if i == 0:
+                        break
+                
+                if len(st.session_state.route_qa_history) > 1:
+                    with st.expander(f"Previous questions ({len(st.session_state.route_qa_history) - 1})"):
+                        for qa2 in st.session_state.route_qa_history[1:]:
+                            st.markdown(f"**Q:** {qa2['question']}")
+                            st.markdown(qa2.get('answer_raw', qa2['answer']))
+                            st.markdown("---")
+        
+        # TAB: Alternatives
+        with rt_tab_alternatives:
+            if overall_risk in ['HIGH', 'MODERATE']:
+                st.caption("Alternative route segments to consider for lower risk")
+                
+                # Find safer alternatives for highest risk segment
+                if highest:
+                    alternatives = find_safe_alternatives(
+                        highest.get('lat', route_loc['latitude']),
+                        highest.get('lon', route_loc['longitude']),
+                        highest.get('risk_score', 0.5),
+                        {'wind_analysis': wind_analysis} if start_wp and wind_data.get('available') else None
+                    )
+                    
+                    if alternatives:
+                        cols = st.columns(min(len(alternatives), 4))
+                        for i, alt in enumerate(alternatives):
+                            with cols[i % 4]:
+                                if alt['risk_level'] == 'LOW':
+                                    card_bg, card_border = '#f0fdf4', '#10b981'
+                                elif alt['risk_level'] == 'MODERATE':
+                                    card_bg, card_border = '#fffbeb', '#f59e0b'
+                                else:
+                                    card_bg, card_border = '#fef2f2', '#ef4444'
+                                
+                                st.markdown(f"""
+                                <div style="background: {card_bg}; border: 2px solid {card_border}; 
+                                            border-radius: 10px; padding: 1rem; min-height: 150px;">
+                                    <div style="font-weight: 600; color: #1f2937; margin-bottom: 0.5rem;">
+                                        {alt['name']}
+                                    </div>
+                                    <div style="font-size: 0.8rem; color: #059669; font-weight: 500;">
+                                        ↓ {alt['risk_reduction']:.0f}% lower risk
+                                    </div>
+                                    <div style="font-size: 0.75rem; color: #6b7280; margin-top: 0.5rem;">
+                                        {alt['reason']}
+                                    </div>
+                                </div>
+                                """, unsafe_allow_html=True)
+                    else:
+                        st.info("No significantly safer alternatives found for the highest risk segment.")
+            else:
+                st.success("✅ Route risk is LOW - your current route is a good choice!")
+        
+        # TAB: Forecast
+        with rt_tab_forecast:
+            if route_loc['latitude'] != 0:
+                forecast = fetch_7day_forecast(route_loc['latitude'], route_loc['longitude'], 0)
+                
+                if forecast.get('available') and forecast.get('daily'):
+                    chart_result = create_forecast_chart(forecast)
+                    
+                    if chart_result:
+                        chart_data, daily = chart_result
+                        
+                        cols = st.columns(7)
+                        for i, day in enumerate(daily):
+                            with cols[i]:
+                                risk_score = day['risk_score']
+                                risk_level = day['risk_level']
+                                
+                                if risk_level == 'HIGH':
+                                    bg_color, border_color, text_color = '#fef2f2', '#dc2626', '#dc2626'
+                                elif risk_level == 'MODERATE':
+                                    bg_color, border_color, text_color = '#fffbeb', '#f59e0b', '#d97706'
+                                else:
+                                    bg_color, border_color, text_color = '#f0fdf4', '#10b981', '#059669'
+                                
+                                st.markdown(f"""
+                                <div style="background: {bg_color}; border: 2px solid {border_color}; 
+                                            border-radius: 8px; padding: 0.5rem; text-align: center;">
+                                    <div style="font-size: 0.7rem; color: #6b7280;">{day['date_formatted']}</div>
+                                    <div style="font-size: 1.1rem; font-weight: 700; color: {text_color};">{risk_score*100:.0f}%</div>
+                                    <div style="font-size: 0.6rem; color: {text_color};">{risk_level}</div>
+                                </div>
+                                """, unsafe_allow_html=True)
+                        
+                        st.markdown("")
+                        st.markdown("**Risk Trend (Route Midpoint)**")
+                        risk_df = pd.DataFrame({
+                            'Day': [d['date_formatted'] for d in daily],
+                            'Risk (%)': [d['risk_score'] * 100 for d in daily]
+                        })
+                        st.bar_chart(risk_df.set_index('Day'))
+                else:
+                    st.info("Forecast data not available")
+            else:
+                st.info("No route data available for forecast")
+        
+        # TAB: Wind (already shown above, but provide summary here)
+        with rt_tab_wind:
+            if start_wp and wind_data.get('available'):
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    st.metric("Direction", wind_analysis.get('wind_direction_cardinal', 'N/A'))
+                with col2:
+                    st.metric("Speed", format_speed(wind_speed, 'wind'))
+                with col3:
+                    st.metric("Loading Risk", wind_analysis.get('loading_risk', 'N/A'))
+                with col4:
+                    st.metric("Danger Slopes", wind_analysis.get('leeward_cardinal', 'N/A'))
+                
+                loading_risk = wind_analysis.get('loading_risk', 'LOW')
+                if loading_risk in ['HIGH', 'EXTREME']:
+                    bg_color, border_color = '#fef2f2', '#dc2626'
+                elif loading_risk == 'MODERATE':
+                    bg_color, border_color = '#fffbeb', '#f59e0b'
+                else:
+                    bg_color, border_color = '#f0fdf4', '#10b981'
+                
+                st.markdown(f"""
+                <div style="background: {bg_color}; border-left: 4px solid {border_color};
+                            padding: 1rem; border-radius: 0 8px 8px 0; margin: 1rem 0;">
+                    <strong>Danger slopes (leeward): {wind_analysis.get('leeward_cardinal', 'N/A')}-facing</strong><br>
+                    Wind from {wind_analysis.get('wind_direction_cardinal', 'N/A')} at {wind_speed:.1f} m/s
+                </div>
+                """, unsafe_allow_html=True)
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.markdown("**🔴 Avoid (Wind Loaded):**")
+                    st.markdown(f"Leeward: {', '.join(wind_analysis.get('leeward_aspects', []))}")
+                    st.markdown(f"Cross-loaded: {', '.join(wind_analysis.get('cross_load_aspects', []))}")
+                with col2:
+                    st.markdown("**🟢 Prefer (Safer):**")
+                    st.markdown(f"{', '.join(wind_analysis.get('safe_aspects', ['All similar']))}")
+            else:
+                st.info("Wind data not available for this route")
+        
+        # TAB: Conditions
+        with rt_tab_conditions:
+            st.markdown("**Route Conditions Overview**")
+            
+            # Show conditions from waypoints
+            if waypoint_risks:
+                temps = [wp.get('temperature') for wp in waypoint_risks if wp.get('temperature') is not None]
+                winds = [wp.get('wind_speed') for wp in waypoint_risks if wp.get('wind_speed') is not None]
+                elevs = [wp.get('elevation') for wp in waypoint_risks if wp.get('elevation') is not None]
+                
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    if temps:
+                        st.metric("Avg Temperature", format_temp(sum(temps)/len(temps)))
+                        st.caption(f"Range: {format_temp(min(temps))} to {format_temp(max(temps))}")
+                with col2:
+                    if winds:
+                        st.metric("Avg Wind Speed", format_speed(sum(winds)/len(winds), 'wind'))
+                        st.caption(f"Max: {format_speed(max(winds), 'wind')}")
+                with col3:
+                    if elevs:
+                        st.metric("Elevation Range", f"{min(elevs):.0f} - {max(elevs):.0f}m")
+                        st.caption(f"Gain: {max(elevs) - min(elevs):.0f}m")
+            else:
+                st.info("No detailed conditions available")
+        
+        # TAB: Live View
+        with rt_tab_live:
+            if route_loc['latitude'] != 0:
+                lat, lon = route_loc['latitude'], route_loc['longitude']
+                
+                from datetime import datetime
+                current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                
+                st.markdown(f"""
+                <div style="background: linear-gradient(135deg, #1e3a5f 0%, #2d5a87 100%); 
+                            border-radius: 12px; padding: 1rem; margin-bottom: 1rem; color: white;">
+                    <strong>📡 Live Weather - Route Midpoint</strong><br>
+                    <span style="font-size: 0.85rem; opacity: 0.9;">
+                        {lat:.4f}°N, {lon:.4f}°E · Updated: {current_time}
+                    </span>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                layer_options = {
+                    "snowcover": "❄️ Snow Cover",
+                    "wind": "💨 Wind Speed",
+                    "temp": "🌡️ Temperature",
+                    "clouds": "☁️ Cloud Cover"
+                }
+                
+                selected_layer = st.selectbox(
+                    "Layer", options=list(layer_options.keys()),
+                    format_func=lambda x: layer_options[x],
+                    key="route_windy_layer"
+                )
+                
+                windy_url = f"https://embed.windy.com/embed2.html?lat={lat}&lon={lon}&detailLat={lat}&detailLon={lon}&width=650&height=450&zoom=10&level=surface&overlay={selected_layer}&product=ecmwf&menu=&message=true&marker=true&calendar=now&pressure=&type=map&location=coordinates&detail=&metricWind=default&metricTemp=default&radarRange=-1"
+                
+                st.markdown(f"""
+                <div style="border-radius: 12px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.2);">
+                    <iframe src="{windy_url}" width="100%" height="450" frameborder="0"></iframe>
+                </div>
+                """, unsafe_allow_html=True)
+            else:
+                st.info("No route data for live view")
+        
+        # TAB: Details
+        with rt_tab_details:
+            st.markdown("**Route Analysis Method**")
+            st.markdown("""
+            This route analysis evaluates avalanche risk at multiple waypoints along your path using:
+            - Real-time weather data from Open-Meteo
+            - Elevation data from Open-Elevation API
+            - Wind loading analysis for slope aspects
+            - Physics-informed risk modeling
+            """)
+            
+            st.markdown("**Waypoint Summary**")
+            st.markdown(f"""
+            - **Total Points:** {len(waypoint_risks)}
+            - **High Risk:** {len(high_risk_segments)}
+            - **Moderate Risk:** {len(mod_risk_segments)}
+            - **Low Risk:** {len(waypoint_risks) - len(high_risk_segments) - len(mod_risk_segments)}
+            """)
+            
+            st.markdown("---")
+            st.caption("⚠️ Route analysis provides estimates based on available data. Always verify conditions on the ground and check local avalanche bulletins.")
 
 
 # ============================================
