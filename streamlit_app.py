@@ -3072,7 +3072,8 @@ def create_route_map(route_analysis, center_lat=None, center_lon=None):
     
     # High risk point markers
     for wp in waypoints:
-        if wp.get('risk_score', 0) >= 0.6:
+        risk_score = wp.get('risk_score') or 0
+        if risk_score >= 0.6:
             folium.CircleMarker(
                 [wp['lat'], wp['lon']],
                 radius=8,
@@ -3080,7 +3081,7 @@ def create_route_map(route_analysis, center_lat=None, center_lon=None):
                 fill=True,
                 fillColor='#dc2626',
                 fillOpacity=0.7,
-                popup=f"<b>High Risk Zone</b><br>Risk: {wp.get('risk_score', 0)*100:.0f}%<br>Factors: {', '.join(wp.get('risk_factors', []))}"
+                popup=f"<b>High Risk Zone</b><br>Risk: {risk_score*100:.0f}%<br>Factors: {', '.join(wp.get('risk_factors', []))}"
             ).add_to(m)
     
     # Add layer control
@@ -3145,13 +3146,13 @@ def fetch_7day_forecast(lat, lon):
                 day_data = {
                     'date': date,
                     'date_formatted': datetime.strptime(date, '%Y-%m-%d').strftime('%a %d'),
-                    'temp_max': temp_max[i] if i < len(temp_max) else 0,
-                    'temp_min': temp_min[i] if i < len(temp_min) else 0,
-                    'precipitation': precip[i] if i < len(precip) else 0,
-                    'snowfall': snowfall[i] if i < len(snowfall) else 0,
-                    'wind_max': wind_max[i] if i < len(wind_max) else 0,
-                    'wind_gust': wind_gust[i] if i < len(wind_gust) else 0,
-                    'radiation': radiation[i] if i < len(radiation) else 0
+                    'temp_max': temp_max[i] if i < len(temp_max) and temp_max[i] is not None else 0,
+                    'temp_min': temp_min[i] if i < len(temp_min) and temp_min[i] is not None else 0,
+                    'precipitation': precip[i] if i < len(precip) and precip[i] is not None else 0,
+                    'snowfall': snowfall[i] if i < len(snowfall) and snowfall[i] is not None else 0,
+                    'wind_max': wind_max[i] if i < len(wind_max) and wind_max[i] is not None else 0,
+                    'wind_gust': wind_gust[i] if i < len(wind_gust) and wind_gust[i] is not None else 0,
+                    'radiation': radiation[i] if i < len(radiation) and radiation[i] is not None else 0
                 }
                 
                 # Calculate risk score for this day
@@ -3238,13 +3239,13 @@ def create_forecast_chart(forecast_data):
     
     daily = forecast_data['daily']
     
-    # Prepare data for chart
+    # Prepare data for chart - ensure no None values
     chart_data = pd.DataFrame({
         'Day': [d['date_formatted'] for d in daily],
-        'Risk %': [d['risk_score'] * 100 for d in daily],
-        'Snowfall (cm)': [d.get('snowfall', 0) or 0 for d in daily],
-        'Temp Max (°C)': [d.get('temp_max', 0) or 0 for d in daily],
-        'Wind (km/h)': [d.get('wind_max', 0) or 0 for d in daily]
+        'Risk %': [d.get('risk_score', 0) * 100 for d in daily],
+        'Snowfall (cm)': [d.get('snowfall') or 0 for d in daily],
+        'Temp Max (°C)': [d.get('temp_max') or 0 for d in daily],
+        'Wind (km/h)': [d.get('wind_max') or 0 for d in daily]
     })
     
     return chart_data, daily
@@ -3857,7 +3858,7 @@ if analysis_mode == "🗺️ Route Analysis":
             'LOW': 'risk-low'
         }.get(overall_risk, 'risk-none')
         
-        max_risk_pct = summary.get('max_risk_score', 0) * 100
+        max_risk_pct = (summary.get('max_risk_score') or 0) * 100
         
         st.markdown(f"""
         <div class="risk-card {risk_class}">
@@ -3876,7 +3877,7 @@ if analysis_mode == "🗺️ Route Analysis":
         with col3:
             st.metric("Moderate Risk Zones", summary.get('moderate_risk_count', 0))
         with col4:
-            avg_risk = summary.get('avg_risk_score', 0) * 100
+            avg_risk = (summary.get('avg_risk_score') or 0) * 100
             st.metric("Avg Risk Score", f"{avg_risk:.0f}%")
         
         # Display route map with risk coloring
@@ -3904,7 +3905,7 @@ if analysis_mode == "🗺️ Route Analysis":
             with col1:
                 st.markdown(f"""
                 **Location:** {highest.get('lat', 0):.5f}, {highest.get('lon', 0):.5f}  
-                **Risk Score:** {highest.get('risk_score', 0)*100:.0f}%
+                **Risk Score:** {(highest.get('risk_score') or 0)*100:.0f}%
                 """)
             with col2:
                 factors = highest.get('risk_factors', [])
@@ -3925,7 +3926,7 @@ if analysis_mode == "🗺️ Route Analysis":
                         'Lon': f"{wp.get('lon', 0):.4f}",
                         'Elevation (m)': wp.get('elevation', 'N/A'),
                         'Risk Level': wp.get('risk_level', 'N/A'),
-                        'Risk Score': f"{wp.get('risk_score', 0)*100:.0f}%",
+                        'Risk Score': f"{(wp.get('risk_score') or 0)*100:.0f}%",
                         'Temp (°C)': f"{wp.get('temperature', 0):.1f}" if wp.get('temperature') else 'N/A',
                         'Wind (m/s)': f"{wp.get('wind_speed', 0):.1f}" if wp.get('wind_speed') else 'N/A'
                     })
@@ -4215,14 +4216,23 @@ else:
                         
                         # Weather details
                         with st.expander("View detailed weather forecast"):
+                            # Helper function for snow display
+                            def format_snow(val):
+                                snow = val if val is not None else 0
+                                return "None" if snow == 0 else f"{snow:.0f}cm"
+                            
+                            def format_rain(val):
+                                rain = val if val is not None else 0
+                                return "None" if rain == 0 else f"{rain:.1f}mm"
+                            
                             weather_df = pd.DataFrame({
                                 'Day': [d['date_formatted'] for d in daily],
-                                'High': [f"{d.get('temp_max', 0):.0f}°C" for d in daily],
-                                'Low': [f"{d.get('temp_min', 0):.0f}°C" for d in daily],
-                                'Snow': [f"{d.get('snowfall', 0):.0f}cm" for d in daily],
-                                'Rain': [f"{d.get('precipitation', 0):.1f}mm" for d in daily],
-                                'Wind': [f"{d.get('wind_max', 0):.0f}km/h" for d in daily],
-                                'Gusts': [f"{d.get('wind_gust', 0):.0f}km/h" for d in daily]
+                                'High': [f"{d.get('temp_max', 0) or 0:.0f}°C" for d in daily],
+                                'Low': [f"{d.get('temp_min', 0) or 0:.0f}°C" for d in daily],
+                                'Snow': [format_snow(d.get('snowfall')) for d in daily],
+                                'Rain': [format_rain(d.get('precipitation')) for d in daily],
+                                'Wind': [f"{d.get('wind_max', 0) or 0:.0f}km/h" for d in daily],
+                                'Gusts': [f"{d.get('wind_gust', 0) or 0:.0f}km/h" for d in daily]
                             })
                             st.dataframe(weather_df, hide_index=True, use_container_width=True)
                 else:
@@ -4234,23 +4244,23 @@ else:
                 wind_results = st.session_state.wind_loading_results
                 wind_data = wind_results['wind_data']
                 wind_analysis = wind_results['wind_analysis']
-                wind_speed = wind_results['wind_speed']
+                wind_speed = wind_results.get('wind_speed') or 0
                 wind_loc = wind_results['location']
                 
                 # Wind metrics
                 col1, col2, col3, col4 = st.columns(4)
                 with col1:
-                    st.metric("Direction", f"{wind_analysis['wind_direction_cardinal']}")
+                    st.metric("Direction", f"{wind_analysis.get('wind_direction_cardinal', 'N/A')}")
                 with col2:
                     st.metric("Speed", f"{wind_speed:.1f} m/s")
                 with col3:
-                    st.metric("Loading Risk", wind_analysis['loading_risk'])
+                    st.metric("Loading Risk", wind_analysis.get('loading_risk', 'N/A'))
                 with col4:
-                    max_gust = wind_data.get('current_gusts') or wind_data.get('max_speed_24h', 0)
+                    max_gust = wind_data.get('current_gusts') or wind_data.get('max_speed_24h') or 0
                     st.metric("Gusts", f"{max_gust:.1f} m/s")
                 
                 # Loading risk banner
-                loading_risk = wind_analysis['loading_risk']
+                loading_risk = wind_analysis.get('loading_risk', 'LOW')
                 risk_colors = {
                     'EXTREME': ('#fef2f2', '#dc2626'),
                     'HIGH': ('#fef2f2', '#dc2626'),
@@ -4262,9 +4272,9 @@ else:
                 st.markdown(f"""
                 <div style="background: {bg_color}; border-left: 4px solid {border_color};
                             padding: 1rem; border-radius: 0 8px 8px 0; margin: 1rem 0;">
-                    <strong>Danger slopes (leeward): {wind_analysis['leeward_cardinal']}-facing</strong><br>
+                    <strong>Danger slopes (leeward): {wind_analysis.get('leeward_cardinal', 'N/A')}-facing</strong><br>
                     <span style="font-size: 0.9rem; color: #6b7280;">
-                        Wind from {wind_analysis['wind_direction_cardinal']} ({wind_analysis['wind_direction']}°)
+                        Wind from {wind_analysis.get('wind_direction_cardinal', 'N/A')} ({wind_analysis.get('wind_direction', 0)}°)
                     </span>
                 </div>
                 """, unsafe_allow_html=True)
@@ -4336,17 +4346,17 @@ else:
                 
                 col1, col2, col3, col4 = st.columns(4)
                 with col1:
-                    temp = env.get('TA', 0)
+                    temp = env.get('TA') or 0
                     st.metric("Temperature", f"{temp:.1f}°C")
                 with col2:
-                    snow = env.get('max_height', 0) * 100
-                    snow_change = env.get('max_height_1_diff', 0) * 100
+                    snow = (env.get('max_height') or 0) * 100
+                    snow_change = (env.get('max_height_1_diff') or 0) * 100
                     st.metric("Snow Depth", f"{snow:.0f} cm", delta=f"{snow_change:+.0f}/24h")
                 with col3:
-                    radiation = env.get('ISWR_daily', 0)
+                    radiation = env.get('ISWR_daily') or 0
                     st.metric("Solar Radiation", f"{radiation:.0f} W/m²")
                 with col4:
-                    stability = env.get('S5', 2.5)
+                    stability = env.get('S5') or 2.5
                     st.metric("Stability Index", f"{stability:.2f}")
                 
                 # Stability interpretation
