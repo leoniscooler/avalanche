@@ -7853,7 +7853,7 @@ if analysis_mode == "📍 Single Point":
                         
                         self.alpha = tf.Variable(0.1, dtype=tf.float32, trainable=True, name='alpha')
 
-                        def call(self, inputs, training=False):
+                    def call(self, inputs, training=False):
                         att = self.attention_dense(inputs)
                         att_weights = self.attention_weights(att)
                         x = inputs * att_weights
