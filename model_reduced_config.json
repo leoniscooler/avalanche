@@ -1,1 +1,22 @@
-{"input_dim": 10, "phys_indices": {"ISWR": 4, "ILWR": null, "OLWR": null, "Qs": 8, "Ql": 9}}
+{
+  "input_dim": 38,
+  "phys_indices": {
+    "ISWR": 3,
+    "ILWR": 7,
+    "OLWR": 9,
+    "Qs": 12,
+    "Ql": 13
+  },
+  "focal_alpha": 0.9,
+  "focal_gamma": 3.0,
+  "f2_weight": 2.5,
+  "recall_weight": 1.0,
+  "beta": 2.5,
+  "phys_warmup_epochs": 15,
+  "max_phys_weight": 0.08,
+  "phys_data_weight": 0.05,
+  "learned_alpha": 0.10000000149011612,
+  "architecture": "256\u2192256\u2192128\u2192128\u219264 with residual connections",
+  "features_count": 38,
+  "model_type": "OptimizedSafetyPINN_Satellite"
+}
