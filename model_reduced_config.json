@@ -23,6 +23,7 @@
     32
   ],
   "dropout_rate": 0.2,
+  "recommended_threshold": "most_accurate",
   "physics_info": {
     "base_features": 14,
     "derived_features": 13,
