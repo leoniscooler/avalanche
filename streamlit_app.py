@@ -17,6 +17,263 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
 
 # ============================================
+# TENSORFLOW IMPORTS (for PhysicsEnhancedStudentModel)
+# ============================================
+try:
+    import tensorflow as tf
+    from tensorflow import keras
+    from tensorflow.keras import layers
+    TF_AVAILABLE = True
+except ImportError:
+    TF_AVAILABLE = False
+
+# ============================================
+# PHYSICS FEATURE CALCULATOR
+# ============================================
+# Calculates derived physics features based on available input features
+
+class PhysicsFeatureCalculator:
+    """
+    Calculates derived physics features based on available input features.
+    Only computes features when ALL required inputs are present.
+    
+    Physics equations used:
+    1. Stefan-Boltzmann: OLWR = ε * σ * T^4
+    2. Net Radiation: R_net = ISWR + ILWR - OLWR
+    3. Net Longwave: LWR_net = ILWR - OLWR  
+    4. Energy Balance Proxy: Q_total = R_net + Qs + Ql
+    5. Bowen Ratio: β = Qs / Ql
+    6. Temperature-Radiation Index: TRI = TA * (ISWR / 1000)
+    7. Melt Potential Index: MPI = max(0, TA) * ISWR / 500
+    8. Clausius-Clapeyron Saturation Pressure: e_s = 611 * exp(17.27*T / (T+237.3))
+    9. Vapor Pressure Deficit: VPD = e_s * (1 - RH/100)
+    10. Wet Bulb Depression Proxy: WBD ∝ (1 - RH/100) * TA
+    11. Snow Stability Index: SSI = S5 * (1 - water/max_water)
+    12. Thermal Stress Index: TSI = |TA - TSS_mod|
+    """
+    
+    STEFAN_BOLTZMANN = 5.67e-8
+    SNOW_EMISSIVITY = 0.97
+    
+    PHYSICS_RECIPES = {
+        'stefan_boltzmann_olwr': (['TSS_mod'], 'calc_stefan_boltzmann_olwr'),
+        'net_radiation': (['ISWR_daily', 'ILWR', 'OLWR'], 'calc_net_radiation'),
+        'net_longwave': (['ILWR', 'OLWR'], 'calc_net_longwave'),
+        'total_energy_flux': (['ISWR_daily', 'ILWR', 'OLWR', 'Qs', 'Ql'], 'calc_total_energy'),
+        'bowen_ratio': (['Qs', 'Ql'], 'calc_bowen_ratio'),
+        'temp_radiation_index': (['TA', 'ISWR_daily'], 'calc_temp_radiation_index'),
+        'melt_potential_index': (['TA', 'ISWR_daily'], 'calc_melt_potential'),
+        'saturation_vapor_pressure': (['TA'], 'calc_saturation_pressure'),
+        'vapor_pressure_deficit': (['TA', 'RH'], 'calc_vpd'),
+        'wet_bulb_depression': (['TA', 'RH'], 'calc_wet_bulb_depression'),
+        'snow_stability_index': (['S5', 'water'], 'calc_snow_stability'),
+        'thermal_stress_index': (['TA', 'TSS_mod'], 'calc_thermal_stress'),
+        'lwc_stability_ratio': (['mean_lwc', 'S5'], 'calc_lwc_stability'),
+        'height_water_ratio': (['max_height', 'water'], 'calc_height_water_ratio'),
+        'radiation_balance_ratio': (['ILWR', 'OLWR'], 'calc_radiation_balance_ratio'),
+    }
+    
+    def __init__(self, available_features):
+        self.available_features = set(available_features)
+        self.feature_indices = {f: i for i, f in enumerate(available_features)}
+        self.computable_features = self._determine_computable_features()
+        
+    def _determine_computable_features(self):
+        computable = {}
+        for derived_name, (required, calc_fn) in self.PHYSICS_RECIPES.items():
+            if all(f in self.available_features for f in required):
+                computable[derived_name] = {
+                    'required': required,
+                    'indices': [self.feature_indices[f] for f in required],
+                    'calc_fn': calc_fn
+                }
+        return computable
+    
+    def get_num_derived_features(self):
+        return len(self.computable_features)
+    
+    def get_derived_feature_names(self):
+        return list(self.computable_features.keys())
+    
+    @staticmethod
+    def calc_stefan_boltzmann_olwr(TSS_mod):
+        T_kelvin = TSS_mod + 273.15
+        T_kelvin = tf.maximum(T_kelvin, 200.0)
+        olwr = 0.97 * 5.67e-8 * tf.pow(T_kelvin, 4)
+        return olwr / 400.0
+    
+    @staticmethod
+    def calc_net_radiation(ISWR_daily, ILWR, OLWR):
+        return (ISWR_daily + ILWR - OLWR) / 500.0
+    
+    @staticmethod
+    def calc_net_longwave(ILWR, OLWR):
+        return (ILWR - OLWR) / 200.0
+    
+    @staticmethod
+    def calc_total_energy(ISWR_daily, ILWR, OLWR, Qs, Ql):
+        R_net = ISWR_daily + ILWR - OLWR
+        return (R_net + Qs + Ql) / 500.0
+    
+    @staticmethod
+    def calc_bowen_ratio(Qs, Ql):
+        eps = 1e-7
+        return tf.clip_by_value(Qs / (Ql + eps), -5.0, 5.0)
+    
+    @staticmethod  
+    def calc_temp_radiation_index(TA, ISWR_daily):
+        return TA * (ISWR_daily / 1000.0)
+    
+    @staticmethod
+    def calc_melt_potential(TA, ISWR_daily):
+        return tf.maximum(TA, 0.0) * ISWR_daily / 500.0
+    
+    @staticmethod
+    def calc_saturation_pressure(TA):
+        e_s = 611.0 * tf.exp(17.27 * TA / (TA + 237.3))
+        return e_s / 2000.0
+    
+    @staticmethod
+    def calc_vpd(TA, RH):
+        e_s = 611.0 * tf.exp(17.27 * TA / (TA + 237.3))
+        vpd = e_s * (1.0 - RH / 100.0)
+        return vpd / 1000.0
+    
+    @staticmethod
+    def calc_wet_bulb_depression(TA, RH):
+        return (1.0 - RH / 100.0) * TA / 10.0
+    
+    @staticmethod
+    def calc_snow_stability(S5, water):
+        water_factor = 1.0 / (1.0 + water / 10.0)
+        return S5 * water_factor
+    
+    @staticmethod
+    def calc_thermal_stress(TA, TSS_mod):
+        return tf.abs(TA - TSS_mod) / 10.0
+    
+    @staticmethod
+    def calc_lwc_stability(mean_lwc, S5):
+        eps = 1e-7
+        return mean_lwc / (S5 + eps)
+    
+    @staticmethod
+    def calc_height_water_ratio(max_height, water):
+        eps = 1e-7
+        return max_height / (water + eps + 1.0)
+    
+    @staticmethod
+    def calc_radiation_balance_ratio(ILWR, OLWR):
+        eps = 1e-7
+        return ILWR / (OLWR + eps)
+    
+    def compute_derived_features(self, X):
+        if len(self.computable_features) == 0:
+            return None
+        
+        derived_list = []
+        
+        for derived_name, info in self.computable_features.items():
+            indices = info['indices']
+            calc_fn_name = info['calc_fn']
+            
+            feature_tensors = [X[:, idx:idx+1] for idx in indices]
+            calc_fn = getattr(self, calc_fn_name)
+            derived_value = calc_fn(*[tf.squeeze(t, axis=1) for t in feature_tensors])
+            
+            if len(derived_value.shape) == 1:
+                derived_value = tf.expand_dims(derived_value, axis=1)
+            
+            derived_list.append(derived_value)
+        
+        return tf.concat(derived_list, axis=1)
+
+
+# ============================================
+# PHYSICS-ENHANCED FLEXIBLE STUDENT MODEL
+# ============================================
+
+if TF_AVAILABLE:
+    class PhysicsEnhancedStudentModel(keras.Model):
+        """
+        A flexible student model with physics-based feature augmentation.
+        
+        Features:
+        - Accepts any number of input parameters
+        - Automatically computes derived physics features when possible
+        - Dynamically determines which physics features can be computed
+        """
+        
+        def __init__(self, input_dim, feature_names, hidden_units=[128, 64, 32], 
+                     dropout_rate=0.2, distillation_temp=3.0,
+                     initial_alpha=0.0, min_alpha=0.0, alpha_decay=0.03):
+            super().__init__()
+            
+            self.input_dim = input_dim
+            self.feature_names = feature_names
+            self.distillation_temp = distillation_temp
+            
+            # Initialize physics calculator
+            self.physics_calc = PhysicsFeatureCalculator(feature_names)
+            self.num_derived = self.physics_calc.get_num_derived_features()
+            self.derived_names = self.physics_calc.get_derived_feature_names()
+            
+            # Total input dimension = original + derived physics features
+            self.total_input_dim = input_dim + self.num_derived
+            
+            # Alpha for knowledge distillation (0 at inference)
+            self.alpha = tf.Variable(initial_alpha, dtype=tf.float32, trainable=False, name='distill_alpha')
+            self.min_alpha = min_alpha
+            self.alpha_decay = alpha_decay
+            
+            # Build architecture
+            self.input_bn = layers.BatchNormalization()
+            
+            # Physics feature processing layer
+            if self.num_derived > 0:
+                self.physics_dense = layers.Dense(32, activation='relu', name='physics_processor')
+                self.physics_bn = layers.BatchNormalization()
+            
+            # Main hidden layers
+            self.hidden_layers = []
+            self.bn_layers = []
+            self.dropout_layers = []
+            
+            for i, units in enumerate(hidden_units):
+                self.hidden_layers.append(
+                    layers.Dense(units, kernel_regularizer=keras.regularizers.l2(1e-4))
+                )
+                self.bn_layers.append(layers.BatchNormalization())
+                self.dropout_layers.append(layers.Dropout(dropout_rate))
+            
+            # Output head
+            self.output_dense1 = layers.Dense(16, activation='relu')
+            self.output_head = layers.Dense(1, activation='sigmoid', name='avalanche_pred')
+        
+        def call(self, inputs, training=False):
+            # Compute derived physics features
+            if self.num_derived > 0:
+                derived_features = self.physics_calc.compute_derived_features(inputs)
+                physics_processed = self.physics_dense(derived_features)
+                physics_processed = self.physics_bn(physics_processed, training=training)
+                x = tf.concat([inputs, physics_processed], axis=1)
+            else:
+                x = inputs
+            
+            # Input normalization
+            x = self.input_bn(x, training=training)
+            
+            # Hidden layers
+            for i in range(len(self.hidden_layers)):
+                x = self.hidden_layers[i](x)
+                x = self.bn_layers[i](x, training=training)
+                x = tf.nn.leaky_relu(x, alpha=0.1)
+                x = self.dropout_layers[i](x, training=training)
+            
+            x = self.output_dense1(x)
+            return self.output_head(x)
+
+# ============================================
 # HTTP SESSION WITH RETRY LOGIC
 # ============================================
 def get_http_session(retries=3, backoff_factor=0.5, timeout=15):
@@ -7696,11 +7953,20 @@ else:
 st.sidebar.markdown("---")
 st.sidebar.markdown("### About")
 st.sidebar.markdown("""
-This tool uses a **Physics-Informed Neural Network (PINN)** trained to assess avalanche risk by integrating real-time satellite and weather station data with physical snowpack mechanics.
+This tool uses a **Physics-Enhanced Neural Network** that combines machine learning with 15 physics equations for avalanche risk assessment.
 
-**Model Training:**
-- Trained using PINNs that embed physical laws (e.g., snow stability equations) into the neural network loss function
-- Combines data-driven learning with domain physics for improved accuracy and interpretability
+**Model Features:**
+- **Flexible Input**: Works with any number of available features
+- **Physics Augmentation**: Automatically computes derived features like net radiation, melt potential, vapor pressure deficit, etc.
+- **Knowledge Distillation**: Trained using a PINN teacher model
+
+**Physics Equations Used:**
+- Stefan-Boltzmann Law (thermal radiation)
+- Net Radiation Balance
+- Clausius-Clapeyron (vapor pressure)
+- Bowen Ratio (heat flux partitioning)
+- Melt Potential Index
+- Snow Stability Index
 
 **Data Sources:**
 - MODIS & VIIRS satellites
@@ -7768,17 +8034,6 @@ if analysis_mode == "📍 Single Point":
                 else:
                     st.session_state.inputs[feature] = np.nan  # Use NaN for missing, imputer will handle it
         
-        # Create input data - use NaN for missing values (imputer will handle them)
-        input_values = []
-        for f in features_for_input:
-            val = st.session_state.inputs.get(f)
-            if val is None or (isinstance(val, float) and np.isnan(val)):
-                input_values.append(np.nan)
-            else:
-                input_values.append(val)
-        
-        input_data = pd.DataFrame([input_values], columns=features_for_input)
-        
         weights_path = "model_reduced_weights.weights.h5"
         config_path = "model_reduced_config.json"
         scaler_path = "scaler_reduced.joblib"
@@ -7788,10 +8043,8 @@ if analysis_mode == "📍 Single Point":
         use_ml_model = False
         
         try:
-            import tensorflow as tf
-            from tensorflow import keras
-            from tensorflow.keras import layers
-            import json
+            if not TF_AVAILABLE:
+                raise ImportError("TensorFlow not available")
             
             # Check if all model files exist
             if all(os.path.exists(p) for p in [weights_path, config_path, scaler_path, imputer_path]):
@@ -7800,140 +8053,75 @@ if analysis_mode == "📍 Single Point":
                 with open(config_path, 'r') as f:
                     model_config = json.load(f)
                 
-                # Recreate the OptimizedSafetyPINN model architecture
-                class OptimizedSafetyPINN(keras.Model):
-                    def __init__(self, phys_idx, input_dim, **kwargs):
-                        super().__init__()
-                        self.phys_idx = phys_idx
-                        self.input_dim = input_dim
-                        dropout_rate = 0.25
-                        
-                        # Attention layers
-                        self.attention_dense = layers.Dense(input_dim, activation='tanh', 
-                                                           kernel_regularizer=keras.regularizers.l2(1e-4))
-                        self.attention_weights = layers.Dense(input_dim, activation='softmax')
-                        
-                        # Deep network with residual connections
-                        self.proj1 = layers.Dense(256)
-                        self.dense1 = layers.Dense(256, kernel_regularizer=keras.regularizers.l2(1e-4))
-                        self.bn1 = layers.BatchNormalization()
-                        self.drop1 = layers.Dropout(dropout_rate)
-                        
-                        self.dense2 = layers.Dense(256, kernel_regularizer=keras.regularizers.l2(1e-4))
-                        self.bn2 = layers.BatchNormalization()
-                        self.drop2 = layers.Dropout(dropout_rate)
-                        
-                        self.proj2 = layers.Dense(128)
-                        self.dense3 = layers.Dense(128, kernel_regularizer=keras.regularizers.l2(1e-4))
-                        self.bn3 = layers.BatchNormalization()
-                        self.drop3 = layers.Dropout(dropout_rate)
-                        
-                        self.dense4 = layers.Dense(128, kernel_regularizer=keras.regularizers.l2(1e-4))
-                        self.bn4 = layers.BatchNormalization()
-                        self.drop4 = layers.Dropout(dropout_rate)
-                        
-                        self.proj3 = layers.Dense(64)
-                        self.dense5 = layers.Dense(64, kernel_regularizer=keras.regularizers.l2(1e-4))
-                        self.bn5 = layers.BatchNormalization()
-                        self.drop5 = layers.Dropout(dropout_rate)
-                        
-                        # Avalanche prediction head
-                        self.aval_dense1 = layers.Dense(64, activation='relu', 
-                                                        kernel_regularizer=keras.regularizers.l2(1e-4))
-                        self.aval_bn1 = layers.BatchNormalization()
-                        self.aval_dense2 = layers.Dense(32, activation='relu',
-                                                        kernel_regularizer=keras.regularizers.l2(1e-4))
-                        self.aval_dense3 = layers.Dense(16, activation='relu')
-                        self.aval_head = layers.Dense(1, activation='sigmoid', name='avalanche')
-                        
-                        # Physics head
-                        self.phys_dense1 = layers.Dense(32, activation='relu')
-                        self.phys_dense2 = layers.Dense(16, activation='relu')
-                        self.phys_head = layers.Dense(1, activation='linear', name='temp_change')
-                        
-                        self.alpha = tf.Variable(0.1, dtype=tf.float32, trainable=True, name='alpha')
-
-                    def call(self, inputs, training=False):
-                        att = self.attention_dense(inputs)
-                        att_weights = self.attention_weights(att)
-                        x = inputs * att_weights
-                        
-                        x = self.proj1(x)
-                        x1 = self.dense1(x)
-                        x1 = self.bn1(x1, training=training)
-                        x1 = tf.nn.leaky_relu(x1, alpha=0.1)
-                        x1 = self.drop1(x1, training=training)
-                        
-                        x2 = self.dense2(x1)
-                        x2 = self.bn2(x2, training=training)
-                        x2 = tf.nn.leaky_relu(x2, alpha=0.1)
-                        x2 = x2 + x1
-                        x2 = self.drop2(x2, training=training)
-                        
-                        x3 = self.proj2(x2)
-                        x3 = self.dense3(x3)
-                        x3 = self.bn3(x3, training=training)
-                        x3 = tf.nn.leaky_relu(x3, alpha=0.1)
-                        x3 = self.drop3(x3, training=training)
-                        
-                        x4 = self.dense4(x3)
-                        x4 = self.bn4(x4, training=training)
-                        x4 = tf.nn.leaky_relu(x4, alpha=0.1)
-                        x4 = x4 + x3
-                        x4 = self.drop4(x4, training=training)
-                        
-                        x5 = self.proj3(x4)
-                        x5 = self.dense5(x5)
-                        x5 = self.bn5(x5, training=training)
-                        feat = tf.nn.leaky_relu(x5, alpha=0.1)
-                        feat = self.drop5(feat, training=training)
-                        
-                        aval_x = self.aval_dense1(feat)
-                        aval_x = self.aval_bn1(aval_x, training=training)
-                        aval_x = self.aval_dense2(aval_x)
-                        aval_x = self.aval_dense3(aval_x)
-                        aval_out = self.aval_head(aval_x)
-                        
-                        phys_x = self.phys_dense1(feat)
-                        phys_x = self.phys_dense2(phys_x)
-                        phys_out = self.phys_head(phys_x)
-                        
-                        return aval_out, phys_out
+                # Get feature names from config
+                feature_names = model_config.get('feature_names', features_for_input)
+                input_dim = model_config.get('input_dim', len(feature_names))
+                hidden_units = model_config.get('hidden_units', [128, 64, 32])
+                dropout_rate = model_config.get('dropout_rate', 0.2)
                 
-                # Create model with saved configuration
-            model = OptimizedSafetyPINN(
-                phys_idx=model_config['phys_indices'],
-                input_dim=model_config['input_dim']
-            )
-            
-            # Build model by calling it once with dummy data
-            dummy_input = tf.zeros((1, model_config['input_dim']))
-            _ = model(dummy_input)
-            
-            # Load trained weights
-            model.load_weights(weights_path)
-            
-            # Load scaler and imputer
-            scaler = joblib.load(scaler_path)
-            imputer = joblib.load(imputer_path)
-            
-            # Load threshold
-            optimal_threshold = 0.3  # Default
-            if os.path.exists(threshold_path):
-                with open(threshold_path, 'r') as f:
-                    optimal_threshold = float(f.read().strip())
-            
-            # Preprocess input
-            input_imputed = imputer.transform(input_data)
-            input_scaled = scaler.transform(input_imputed)
-            
-            # Get prediction
-            prediction, _ = model(tf.constant(input_scaled, dtype=tf.float32), training=False)
-            avalanche_probability = float(prediction[0][0])
-            # Model confidence = how far from 0.5 (uncertain) the prediction is
-            # Confidence is high when probability is close to 0 or 1
-            model_confidence = abs(avalanche_probability - 0.5) * 2  # Scale to 0-1
-            use_ml_model = True
+                # Create input data using the model's expected features
+                input_values = []
+                for f in feature_names:
+                    val = st.session_state.inputs.get(f)
+                    if val is None or (isinstance(val, float) and np.isnan(val)):
+                        input_values.append(np.nan)
+                    else:
+                        input_values.append(val)
+                
+                input_data = pd.DataFrame([input_values], columns=feature_names)
+                
+                # Create PhysicsEnhancedStudentModel with saved configuration
+                model = PhysicsEnhancedStudentModel(
+                    input_dim=input_dim,
+                    feature_names=feature_names,
+                    hidden_units=hidden_units,
+                    dropout_rate=dropout_rate,
+                    initial_alpha=0.0  # No teacher influence at inference
+                )
+                
+                # Build model by calling it once with dummy data
+                dummy_input = tf.zeros((1, input_dim))
+                _ = model(dummy_input)
+                
+                # Load trained weights
+                model.load_weights(weights_path)
+                
+                # Load scaler and imputer
+                scaler = joblib.load(scaler_path)
+                imputer = joblib.load(imputer_path)
+                
+                # Load thresholds
+                thresholds = {'default': 0.5, 'most_accurate': 0.3, 'balanced': 0.4}
+                if os.path.exists(threshold_path):
+                    with open(threshold_path, 'r') as f:
+                        for line in f:
+                            if '=' in line:
+                                key, val = line.strip().split('=')
+                                thresholds[key] = float(val)
+                
+                # Use balanced threshold by default for safety
+                optimal_threshold = thresholds.get('balanced', 0.4)
+                
+                # Preprocess input
+                input_imputed = imputer.transform(input_data)
+                input_scaled = scaler.transform(input_imputed)
+                
+                # Get prediction - PhysicsEnhancedStudentModel only returns avalanche prediction
+                prediction = model(tf.constant(input_scaled, dtype=tf.float32), training=False)
+                avalanche_probability = float(prediction[0][0])
+                
+                # Model confidence = how far from 0.5 the prediction is
+                model_confidence = abs(avalanche_probability - 0.5) * 2
+                use_ml_model = True
+                
+                # Log physics features used
+                physics_info = model_config.get('physics_info', {})
+                if physics_info:
+                    st.session_state.physics_features_used = {
+                        'base_features': physics_info.get('base_features', input_dim),
+                        'derived_features': physics_info.get('derived_features', 0),
+                        'derived_names': physics_info.get('derived_names', [])
+                    }
         
         except Exception as e:
             pass  # Fall through to physics-based assessment
