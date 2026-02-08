@@ -8241,7 +8241,10 @@ else:
                         swe = amsr2.get('swe_mm')
                         if swe is not None:
                             st.metric("SWE (mm)", f"{swe:.1f}")
-                            st.caption(f"Raw: `{swe}` mm")
+                            if use_imperial:
+                                st.caption(f"Raw: `{swe}` mm ({imperial_length_mm(swe):.2f} in)")
+                            else:
+                                st.caption(f"Raw: `{swe}` mm")
                 
                 # ========================================
                 # GLOBSNOW SWE
@@ -8256,7 +8259,10 @@ else:
                         swe = globsnow.get('swe_mm')
                         if swe is not None:
                             st.metric("SWE (mm)", f"{swe:.1f}")
-                            st.caption(f"Raw: `{swe}` mm")
+                            if use_imperial:
+                                st.caption(f"Raw: `{swe}` mm ({imperial_length_mm(swe):.2f} in)")
+                            else:
+                                st.caption(f"Raw: `{swe}` mm")
                 
                 # ========================================
                 # COPERNICUS SNOW
@@ -8278,7 +8284,10 @@ else:
                             swe = copernicus.get('swe_mm')
                             if swe is not None:
                                 st.metric("SWE (mm)", f"{swe:.1f}")
-                                st.caption(f"Raw: `{swe}`")
+                                if use_imperial:
+                                    st.caption(f"Raw: `{swe}` mm ({imperial_length_mm(swe):.2f} in)")
+                                else:
+                                    st.caption(f"Raw: `{swe}` mm")
                 
                 # ========================================
                 # SUMMARY: WHAT THE MODEL ACTUALLY USED
@@ -8293,6 +8302,61 @@ else:
                     for param, source in st.session_state.data_sources:
                         data_sources_dict[param] = source
                 
+                # Helper to format value with imperial conversion
+                def format_value_with_imperial(param, value, use_imperial):
+                    """Format value with optional imperial conversion based on parameter name"""
+                    if not isinstance(value, (int, float)):
+                        return str(value)
+                    
+                    # Determine unit and conversion based on parameter name
+                    param_lower = param.lower()
+                    
+                    if 'temp' in param_lower:
+                        if use_imperial:
+                            return f"{value:.2f} °C ({imperial_temp(value):.1f}°F)"
+                        return f"{value:.2f} °C"
+                    
+                    elif 'snow_depth' in param_lower or param_lower == 'snow_depth':
+                        # Assume cm for snow depth
+                        if use_imperial:
+                            return f"{value:.2f} cm ({imperial_length_cm(value):.1f} in)"
+                        return f"{value:.2f} cm"
+                    
+                    elif 'swe' in param_lower:
+                        # SWE in mm
+                        if use_imperial:
+                            return f"{value:.2f} mm ({imperial_length_mm(value):.2f} in)"
+                        return f"{value:.2f} mm"
+                    
+                    elif 'precip' in param_lower or 'rainfall' in param_lower:
+                        # Precipitation in mm
+                        if use_imperial:
+                            return f"{value:.2f} mm ({imperial_length_mm(value):.2f} in)"
+                        return f"{value:.2f} mm"
+                    
+                    elif 'wind_speed' in param_lower:
+                        # Wind could be km/h or m/s - assume m/s for model
+                        if use_imperial:
+                            return f"{value:.2f} m/s ({imperial_speed_ms(value):.1f} mph)"
+                        return f"{value:.2f} m/s"
+                    
+                    elif 'humidity' in param_lower:
+                        return f"{value:.1f}%"
+                    
+                    elif 'radiation' in param_lower or 'solar' in param_lower:
+                        return f"{value:.2f} W/m²"
+                    
+                    elif 'elevation' in param_lower or 'altitude' in param_lower:
+                        if use_imperial:
+                            return f"{value:.1f} m ({value * 3.28084:.0f} ft)"
+                        return f"{value:.1f} m"
+                    
+                    elif 'slope' in param_lower or 'aspect' in param_lower or 'angle' in param_lower:
+                        return f"{value:.1f}°"
+                    
+                    else:
+                        return f"{value:.4f}" if isinstance(value, float) else str(value)
+                
                 # Only show non-calculated inputs
                 model_inputs = []
                 for param, source in st.session_state.data_sources or []:
@@ -8301,7 +8365,7 @@ else:
                         if value is not None:
                             model_inputs.append({
                                 'Parameter': param,
-                                'Value': f"{value:.4f}" if isinstance(value, float) else str(value),
+                                'Value': format_value_with_imperial(param, value, use_imperial),
                                 'Source': source
                             })
                 
