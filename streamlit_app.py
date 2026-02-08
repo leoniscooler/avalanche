@@ -194,84 +194,136 @@ class PhysicsFeatureCalculator:
 # ============================================
 
 if TF_AVAILABLE:
-    class PhysicsEnhancedStudentModel(keras.Model):
+    class OptimizedSafetyPINN(keras.Model):
         """
-        A flexible student model with physics-based feature augmentation.
+        Physics-Informed Neural Network optimized for SAFETY.
+        Goal: Catch ALL avalanches (maximize recall) with minimal false alarms.
         
-        Features:
-        - Accepts any number of input parameters
-        - Automatically computes derived physics features when possible
-        - Dynamically determines which physics features can be computed
+        Uses ILWR and OLWR directly from the dataset for energy balance.
+        Supports flexible input with KNN imputation for missing features.
         """
-        
-        def __init__(self, input_dim, feature_names, hidden_units=[128, 64, 32], 
-                     dropout_rate=0.2, distillation_temp=3.0,
-                     initial_alpha=0.0, min_alpha=0.0, alpha_decay=0.03):
+        def __init__(self, phys_idx, input_dim, focal_alpha=0.90, focal_gamma=3.0,
+                     f2_weight=2.5, recall_weight=1.0, dropout_rate=0.25,
+                     clip_norm=1.0, beta=2.5, phys_warmup_epochs=10,
+                     max_phys_weight=0.08, phys_data_weight=0.05):
             super().__init__()
-            
+            self.phys_idx = phys_idx
             self.input_dim = input_dim
-            self.feature_names = feature_names
-            self.distillation_temp = distillation_temp
-            
-            # Initialize physics calculator
-            self.physics_calc = PhysicsFeatureCalculator(feature_names)
-            self.num_derived = self.physics_calc.get_num_derived_features()
-            self.derived_names = self.physics_calc.get_derived_feature_names()
-            
-            # Total input dimension = original + derived physics features
-            self.total_input_dim = input_dim + self.num_derived
-            
-            # Alpha for knowledge distillation (0 at inference)
-            self.alpha = tf.Variable(initial_alpha, dtype=tf.float32, trainable=False, name='distill_alpha')
-            self.min_alpha = min_alpha
-            self.alpha_decay = alpha_decay
-            
-            # Build architecture
-            self.input_bn = layers.BatchNormalization()
-            
-            # Physics feature processing layer
-            if self.num_derived > 0:
-                self.physics_dense = layers.Dense(32, activation='relu', name='physics_processor')
-                self.physics_bn = layers.BatchNormalization()
-            
-            # Main hidden layers
-            self.hidden_layers = []
-            self.bn_layers = []
-            self.dropout_layers = []
-            
-            for i, units in enumerate(hidden_units):
-                self.hidden_layers.append(
-                    layers.Dense(units, kernel_regularizer=keras.regularizers.l2(1e-4))
-                )
-                self.bn_layers.append(layers.BatchNormalization())
-                self.dropout_layers.append(layers.Dropout(dropout_rate))
-            
-            # Output head
-            self.output_dense1 = layers.Dense(16, activation='relu')
-            self.output_head = layers.Dense(1, activation='sigmoid', name='avalanche_pred')
-        
+
+            # Safety-focused hyperparameters
+            self.focal_alpha = focal_alpha
+            self.focal_gamma = focal_gamma
+            self.f2_weight = f2_weight
+            self.recall_weight = recall_weight
+            self.clip_norm = clip_norm
+            self.beta = beta
+
+            # Physics integration parameters
+            self.phys_warmup_epochs = phys_warmup_epochs
+            self.max_phys_weight = max_phys_weight
+            self.phys_data_weight = phys_data_weight
+            self.current_epoch = tf.Variable(0, dtype=tf.int32, trainable=False)
+
+            # Attention layer
+            self.attention_dense = layers.Dense(input_dim, activation='tanh',
+                                               kernel_regularizer=keras.regularizers.l2(1e-4))
+            self.attention_weights = layers.Dense(input_dim, activation='softmax')
+
+            # Deep network with residual connections
+            self.proj1 = layers.Dense(256)
+            self.dense1 = layers.Dense(256, kernel_regularizer=keras.regularizers.l2(1e-4))
+            self.bn1 = layers.BatchNormalization()
+            self.drop1 = layers.Dropout(dropout_rate)
+
+            self.dense2 = layers.Dense(256, kernel_regularizer=keras.regularizers.l2(1e-4))
+            self.bn2 = layers.BatchNormalization()
+            self.drop2 = layers.Dropout(dropout_rate)
+
+            self.proj2 = layers.Dense(128)
+            self.dense3 = layers.Dense(128, kernel_regularizer=keras.regularizers.l2(1e-4))
+            self.bn3 = layers.BatchNormalization()
+            self.drop3 = layers.Dropout(dropout_rate)
+
+            self.dense4 = layers.Dense(128, kernel_regularizer=keras.regularizers.l2(1e-4))
+            self.bn4 = layers.BatchNormalization()
+            self.drop4 = layers.Dropout(dropout_rate)
+
+            self.proj3 = layers.Dense(64)
+            self.dense5 = layers.Dense(64, kernel_regularizer=keras.regularizers.l2(1e-4))
+            self.bn5 = layers.BatchNormalization()
+            self.drop5 = layers.Dropout(dropout_rate)
+
+            # Avalanche prediction head
+            self.aval_dense1 = layers.Dense(64, activation='relu',
+                                            kernel_regularizer=keras.regularizers.l2(1e-4))
+            self.aval_bn1 = layers.BatchNormalization()
+            self.aval_dense2 = layers.Dense(32, activation='relu',
+                                            kernel_regularizer=keras.regularizers.l2(1e-4))
+            self.aval_dense3 = layers.Dense(16, activation='relu')
+            self.aval_head = layers.Dense(1, activation='sigmoid', name='avalanche')
+
+            # Physics head
+            self.phys_dense1 = layers.Dense(32, activation='relu')
+            self.phys_dense2 = layers.Dense(16, activation='relu')
+            self.phys_head = layers.Dense(1, activation='linear', name='temp_change')
+
+            # Learnable physics coefficient
+            self.alpha = tf.Variable(0.1, dtype=tf.float32, trainable=True, name='alpha')
+
         def call(self, inputs, training=False):
-            # Compute derived physics features
-            if self.num_derived > 0:
-                derived_features = self.physics_calc.compute_derived_features(inputs)
-                physics_processed = self.physics_dense(derived_features)
-                physics_processed = self.physics_bn(physics_processed, training=training)
-                x = tf.concat([inputs, physics_processed], axis=1)
-            else:
-                x = inputs
-            
-            # Input normalization
-            x = self.input_bn(x, training=training)
-            
-            # Hidden layers
-            for i in range(len(self.hidden_layers)):
-                x = self.hidden_layers[i](x)
-                x = self.bn_layers[i](x, training=training)
-                x = tf.nn.leaky_relu(x, alpha=0.1)
-                x = self.dropout_layers[i](x, training=training)
-            
-            x = self.output_dense1(x)
-            return self.output_head(x)
+            # Attention mechanism
+            att = self.attention_dense(inputs)
+            att_weights = self.attention_weights(att)
+            x = inputs * att_weights
+
+            # Block 1
+            x = self.proj1(x)
+            x1 = self.dense1(x)
+            x1 = self.bn1(x1, training=training)
+            x1 = tf.nn.leaky_relu(x1, alpha=0.1)
+            x1 = self.drop1(x1, training=training)
+
+            # Block 2 + Residual
+            x2 = self.dense2(x1)
+            x2 = self.bn2(x2, training=training)
+            x2 = tf.nn.leaky_relu(x2, alpha=0.1)
+            x2 = x2 + x1
+            x2 = self.drop2(x2, training=training)
+
+            # Block 3
+            x3 = self.proj2(x2)
+            x3 = self.dense3(x3)
+            x3 = self.bn3(x3, training=training)
+            x3 = tf.nn.leaky_relu(x3, alpha=0.1)
+            x3 = self.drop3(x3, training=training)
+
+            # Block 4 + Residual
+            x4 = self.dense4(x3)
+            x4 = self.bn4(x4, training=training)
+            x4 = tf.nn.leaky_relu(x4, alpha=0.1)
+            x4 = x4 + x3
+            x4 = self.drop4(x4, training=training)
+
+            # Block 5
+            x5 = self.proj3(x4)
+            x5 = self.dense5(x5)
+            x5 = self.bn5(x5, training=training)
+            feat = tf.nn.leaky_relu(x5, alpha=0.1)
+            feat = self.drop5(feat, training=training)
+
+            # Avalanche head
+            aval_x = self.aval_dense1(feat)
+            aval_x = self.aval_bn1(aval_x, training=training)
+            aval_x = self.aval_dense2(aval_x)
+            aval_x = self.aval_dense3(aval_x)
+            aval_out = self.aval_head(aval_x)
+
+            # Physics head
+            phys_x = self.phys_dense1(feat)
+            phys_x = self.phys_dense2(phys_x)
+            phys_out = self.phys_head(phys_x)
+
+            return aval_out, phys_out
 
 # ============================================
 # HTTP SESSION WITH RETRY LOGIC
@@ -9390,8 +9442,12 @@ if analysis_mode == "📍 Single Point":
                 # Get feature names from config
                 feature_names = model_config.get('feature_names', features_for_input)
                 input_dim = model_config.get('input_dim', len(feature_names))
-                hidden_units = model_config.get('hidden_units', [128, 64, 32])
-                dropout_rate = model_config.get('dropout_rate', 0.2)
+                dropout_rate = model_config.get('dropout_rate', 0.25)
+                
+                # Get physics indices from config
+                phys_indices = model_config.get('phys_indices', {
+                    'ISWR': None, 'ILWR': None, 'OLWR': None, 'Qs': None, 'Ql': None
+                })
                 
                 # Create input data using the model's expected features
                 input_values = []
@@ -9404,13 +9460,19 @@ if analysis_mode == "📍 Single Point":
                 
                 input_data = pd.DataFrame([input_values], columns=feature_names)
                 
-                # Create PhysicsEnhancedStudentModel with saved configuration
-                model = PhysicsEnhancedStudentModel(
+                # Create OptimizedSafetyPINN with saved configuration
+                model = OptimizedSafetyPINN(
+                    phys_idx=phys_indices,
                     input_dim=input_dim,
-                    feature_names=feature_names,
-                    hidden_units=hidden_units,
+                    focal_alpha=model_config.get('focal_alpha', 0.90),
+                    focal_gamma=model_config.get('focal_gamma', 3.0),
+                    f2_weight=model_config.get('f2_weight', 2.5),
+                    recall_weight=model_config.get('recall_weight', 1.0),
                     dropout_rate=dropout_rate,
-                    initial_alpha=0.0  # No teacher influence at inference
+                    beta=model_config.get('beta', 2.5),
+                    phys_warmup_epochs=model_config.get('phys_warmup_epochs', 15),
+                    max_phys_weight=model_config.get('max_phys_weight', 0.08),
+                    phys_data_weight=model_config.get('phys_data_weight', 0.05)
                 )
                 
                 # Build model by calling it once with dummy data
@@ -9420,29 +9482,33 @@ if analysis_mode == "📍 Single Point":
                 # Load trained weights
                 model.load_weights(weights_path)
                 
-                # Load scaler and imputer
+                # Load scaler and KNN imputer
                 scaler = joblib.load(scaler_path)
-                imputer = joblib.load(imputer_path)
+                imputer = joblib.load(imputer_path)  # KNN imputer for flexible input
                 
-                # Load thresholds
-                thresholds = {'default': 0.5, 'most_accurate': 0.3, 'balanced': 0.4}
+                # Load threshold
+                optimal_threshold = 0.5  # Default
                 if os.path.exists(threshold_path):
                     with open(threshold_path, 'r') as f:
-                        for line in f:
-                            if '=' in line:
-                                key, val = line.strip().split('=')
-                                thresholds[key] = float(val)
+                        content = f.read().strip()
+                        # Handle both single value and key=value formats
+                        if '=' in content:
+                            for line in content.split('\n'):
+                                if '=' in line:
+                                    key, val = line.strip().split('=')
+                                    if key.strip() == 'balanced' or key.strip() == 'default':
+                                        optimal_threshold = float(val)
+                                        break
+                        else:
+                            optimal_threshold = float(content)
                 
-                # Use balanced threshold by default for safety
-                optimal_threshold = thresholds.get('balanced', 0.4)
-                
-                # Preprocess input
+                # Preprocess input with KNN imputation
                 input_imputed = imputer.transform(input_data)
                 input_scaled = scaler.transform(input_imputed)
                 
-                # Get prediction - PhysicsEnhancedStudentModel only returns avalanche prediction
-                prediction = model(tf.constant(input_scaled, dtype=tf.float32), training=False)
-                avalanche_probability = float(prediction[0][0])
+                # Get prediction - OptimizedSafetyPINN returns (avalanche_pred, physics_pred)
+                aval_pred, phys_pred = model(tf.constant(input_scaled, dtype=tf.float32), training=False)
+                avalanche_probability = float(aval_pred[0][0])
                 
                 # Model confidence = how far from 0.5 the prediction is
                 model_confidence = abs(avalanche_probability - 0.5) * 2
