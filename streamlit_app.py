@@ -72,7 +72,7 @@ def create_knn_imputer_from_datasets(feature_names):
     training_data = load_training_datasets()
     
     if training_data is None:
-        return None, None, None
+        return None, None
     
     # Get only the features we need
     available_features = [f for f in feature_names if f in training_data.columns]
@@ -6401,10 +6401,6 @@ if 'data_sources' not in st.session_state:
     st.session_state.data_sources = []
 if 'inputs' not in st.session_state:
     st.session_state.inputs = {f: 0.0 for f in features_for_input}
-if 'knn_imputation_info' not in st.session_state:
-    st.session_state.knn_imputation_info = {}
-if 'model_error' not in st.session_state:
-    st.session_state.model_error = None
 if 'user_ip' not in st.session_state:
     st.session_state.user_ip = None
 if 'ip_consent' not in st.session_state:
@@ -8815,19 +8811,6 @@ else:
                             knn_df = pd.DataFrame(knn_rows)
                             st.dataframe(knn_df, hide_index=True, use_container_width=True)
                             st.caption(f"💡 {len(knn_imputed)} of {knn_info.get('total_features', 38)} features were imputed from training data patterns.")
-                else:
-                    # Show info about KNN status even if no features were imputed
-                    if knn_info:
-                        features_from_data = knn_info.get('features_from_satellite', 0)
-                        total = knn_info.get('total_features', 38)
-                        with st.expander("🔮 KNN Imputation Status", expanded=False):
-                            st.success(f"✅ All {features_from_data}/{total} features were obtained from satellite/API data. No KNN imputation was needed.")
-                    else:
-                        with st.expander("🔮 KNN Imputation Status", expanded=False):
-                            st.info("ℹ️ KNN imputation info not available. Run a new assessment to see imputation details.")
-                            # Show any model errors for debugging
-                            if hasattr(st.session_state, 'model_error') and st.session_state.model_error:
-                                st.warning(f"⚠️ Model note: {st.session_state.model_error}")
                 
                 # Coordinate box for manual verification
                 st.markdown("---")
@@ -9538,18 +9521,6 @@ if analysis_mode == "📍 Single Point":
                         imputer = joblib.load(imputer_path)
                         input_imputed = imputer.transform(input_data)
                         input_scaled = scaler.transform(input_imputed)
-                        
-                        # Set KNN info for fallback path
-                        n_missing = input_data.isna().sum().sum()
-                        st.session_state.knn_imputation_info = {
-                            'features_imputed': int(n_missing),
-                            'total_features': len(feature_names),
-                            'features_from_satellite': len(feature_names) - int(n_missing),
-                            'knn_imputed_values': {},  # Can't track individual values with saved imputer
-                            'original_values': {},
-                            'feature_names': feature_names,
-                            'source': 'saved_imputer'
-                        }
                     else:
                         raise ValueError("Could not load KNN imputer from datasets or saved files")
                 
