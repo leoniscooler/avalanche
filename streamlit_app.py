@@ -28,165 +28,93 @@ except ImportError:
     TF_AVAILABLE = False
 
 # ============================================
-# PHYSICS FEATURE CALCULATOR
+# KNN IMPUTER FROM TRAINING DATASETS
 # ============================================
-# Calculates derived physics features based on available input features
+# Loads 4 training datasets from GitHub and creates a KNN imputer
+# to fill in missing features based on similar samples
 
-class PhysicsFeatureCalculator:
+from sklearn.impute import KNNImputer
+from sklearn.preprocessing import StandardScaler
+
+# GitHub raw URLs for the 4 training datasets
+DATASET_URLS = {
+    'dataset1': 'https://raw.githubusercontent.com/leonkay-ai/avalanche-prediction/main/dataset1.csv',
+    'dataset2': 'https://raw.githubusercontent.com/leonkay-ai/avalanche-prediction/main/dataset2.csv',
+    'dataset3': 'https://raw.githubusercontent.com/leonkay-ai/avalanche-prediction/main/dataset3_nowcast.csv',
+    'dataset4': 'https://raw.githubusercontent.com/leonkay-ai/avalanche-prediction/main/dataset4_nowcast.csv',
+}
+
+@st.cache_resource(ttl=3600*24)  # Cache for 24 hours
+def load_training_datasets():
+    """Load the 4 training datasets from GitHub."""
+    datasets = []
+    for name, url in DATASET_URLS.items():
+        try:
+            df = pd.read_csv(url)
+            datasets.append(df)
+            print(f"✅ Loaded {name}: {len(df)} samples")
+        except Exception as e:
+            print(f"⚠️ Failed to load {name}: {e}")
+    
+    if datasets:
+        combined = pd.concat(datasets, ignore_index=True)
+        print(f"📊 Total training samples: {len(combined)}")
+        return combined
+    return None
+
+@st.cache_resource(ttl=3600*24)  # Cache for 24 hours
+def create_knn_imputer_from_datasets(feature_names):
     """
-    Calculates derived physics features based on available input features.
-    Only computes features when ALL required inputs are present.
-    
-    Physics equations used:
-    1. Stefan-Boltzmann: OLWR = ε * σ * T^4
-    2. Net Radiation: R_net = ISWR + ILWR - OLWR
-    3. Net Longwave: LWR_net = ILWR - OLWR  
-    4. Energy Balance Proxy: Q_total = R_net + Qs + Ql
-    5. Bowen Ratio: β = Qs / Ql
-    6. Temperature-Radiation Index: TRI = TA * (ISWR / 1000)
-    7. Melt Potential Index: MPI = max(0, TA) * ISWR / 500
-    8. Clausius-Clapeyron Saturation Pressure: e_s = 611 * exp(17.27*T / (T+237.3))
-    9. Vapor Pressure Deficit: VPD = e_s * (1 - RH/100)
-    10. Wet Bulb Depression Proxy: WBD ∝ (1 - RH/100) * TA
-    11. Snow Stability Index: SSI = S5 * (1 - water/max_water)
-    12. Thermal Stress Index: TSI = |TA - TSS_mod|
+    Create a KNN imputer trained on the 4 training datasets.
+    This allows filling in missing satellite data based on similar
+    conditions in the training data.
     """
+    training_data = load_training_datasets()
     
-    STEFAN_BOLTZMANN = 5.67e-8
-    SNOW_EMISSIVITY = 0.97
+    if training_data is None:
+        return None, None
     
-    PHYSICS_RECIPES = {
-        'stefan_boltzmann_olwr': (['TSS_mod'], 'calc_stefan_boltzmann_olwr'),
-        'net_radiation': (['ISWR_daily', 'ILWR', 'OLWR'], 'calc_net_radiation'),
-        'net_longwave': (['ILWR', 'OLWR'], 'calc_net_longwave'),
-        'total_energy_flux': (['ISWR_daily', 'ILWR', 'OLWR', 'Qs', 'Ql'], 'calc_total_energy'),
-        'bowen_ratio': (['Qs', 'Ql'], 'calc_bowen_ratio'),
-        'temp_radiation_index': (['TA', 'ISWR_daily'], 'calc_temp_radiation_index'),
-        'melt_potential_index': (['TA', 'ISWR_daily'], 'calc_melt_potential'),
-        'saturation_vapor_pressure': (['TA'], 'calc_saturation_pressure'),
-        'vapor_pressure_deficit': (['TA', 'RH'], 'calc_vpd'),
-        'wet_bulb_depression': (['TA', 'RH'], 'calc_wet_bulb_depression'),
-        'snow_stability_index': (['S5', 'water'], 'calc_snow_stability'),
-        'thermal_stress_index': (['TA', 'TSS_mod'], 'calc_thermal_stress'),
-        'lwc_stability_ratio': (['mean_lwc', 'S5'], 'calc_lwc_stability'),
-        'height_water_ratio': (['max_height', 'water'], 'calc_height_water_ratio'),
-        'radiation_balance_ratio': (['ILWR', 'OLWR'], 'calc_radiation_balance_ratio'),
-    }
+    # Get only the features we need
+    available_features = [f for f in feature_names if f in training_data.columns]
     
-    def __init__(self, available_features):
-        self.available_features = set(available_features)
-        self.feature_indices = {f: i for i, f in enumerate(available_features)}
-        self.computable_features = self._determine_computable_features()
-        
-    def _determine_computable_features(self):
-        computable = {}
-        for derived_name, (required, calc_fn) in self.PHYSICS_RECIPES.items():
-            if all(f in self.available_features for f in required):
-                computable[derived_name] = {
-                    'required': required,
-                    'indices': [self.feature_indices[f] for f in required],
-                    'calc_fn': calc_fn
-                }
-        return computable
+    if len(available_features) < len(feature_names) * 0.5:
+        print(f"⚠️ Only {len(available_features)}/{len(feature_names)} features available in training data")
     
-    def get_num_derived_features(self):
-        return len(self.computable_features)
+    # Extract features and handle profile_time conversion
+    X_train = training_data[available_features].copy()
     
-    def get_derived_feature_names(self):
-        return list(self.computable_features.keys())
+    # Convert profile_time if it's in time format
+    if 'profile_time' in X_train.columns:
+        if X_train['profile_time'].dtype == 'object':
+            # Convert "HH:MM:SS" to hour integer
+            X_train['profile_time'] = pd.to_datetime(
+                X_train['profile_time'], format='%H:%M:%S', errors='coerce'
+            ).dt.hour
     
-    @staticmethod
-    def calc_stefan_boltzmann_olwr(TSS_mod):
-        T_kelvin = TSS_mod + 273.15
-        T_kelvin = tf.maximum(T_kelvin, 200.0)
-        olwr = 0.97 * 5.67e-8 * tf.pow(T_kelvin, 4)
-        return olwr / 400.0
+    # Convert to numeric and handle any remaining non-numeric values
+    X_train = X_train.apply(pd.to_numeric, errors='coerce')
     
-    @staticmethod
-    def calc_net_radiation(ISWR_daily, ILWR, OLWR):
-        return (ISWR_daily + ILWR - OLWR) / 500.0
+    # First pass: Simple imputation for initial scaling
+    simple_imputer = SimpleImputer(strategy='mean')
+    X_imputed = pd.DataFrame(
+        simple_imputer.fit_transform(X_train),
+        columns=available_features
+    )
     
-    @staticmethod
-    def calc_net_longwave(ILWR, OLWR):
-        return (ILWR - OLWR) / 200.0
+    # Scale the data
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X_imputed)
     
-    @staticmethod
-    def calc_total_energy(ISWR_daily, ILWR, OLWR, Qs, Ql):
-        R_net = ISWR_daily + ILWR - OLWR
-        return (R_net + Qs + Ql) / 500.0
+    # Create and fit KNN imputer on scaled data
+    knn_imputer = KNNImputer(n_neighbors=5, weights='distance')
+    knn_imputer.fit(X_scaled)
     
-    @staticmethod
-    def calc_bowen_ratio(Qs, Ql):
-        eps = 1e-7
-        return tf.clip_by_value(Qs / (Ql + eps), -5.0, 5.0)
+    print(f"✅ KNN Imputer created with {len(available_features)} features from {len(X_train)} samples")
     
-    @staticmethod  
-    def calc_temp_radiation_index(TA, ISWR_daily):
-        return TA * (ISWR_daily / 1000.0)
-    
-    @staticmethod
-    def calc_melt_potential(TA, ISWR_daily):
-        return tf.maximum(TA, 0.0) * ISWR_daily / 500.0
-    
-    @staticmethod
-    def calc_saturation_pressure(TA):
-        e_s = 611.0 * tf.exp(17.27 * TA / (TA + 237.3))
-        return e_s / 2000.0
-    
-    @staticmethod
-    def calc_vpd(TA, RH):
-        e_s = 611.0 * tf.exp(17.27 * TA / (TA + 237.3))
-        vpd = e_s * (1.0 - RH / 100.0)
-        return vpd / 1000.0
-    
-    @staticmethod
-    def calc_wet_bulb_depression(TA, RH):
-        return (1.0 - RH / 100.0) * TA / 10.0
-    
-    @staticmethod
-    def calc_snow_stability(S5, water):
-        water_factor = 1.0 / (1.0 + water / 10.0)
-        return S5 * water_factor
-    
-    @staticmethod
-    def calc_thermal_stress(TA, TSS_mod):
-        return tf.abs(TA - TSS_mod) / 10.0
-    
-    @staticmethod
-    def calc_lwc_stability(mean_lwc, S5):
-        eps = 1e-7
-        return mean_lwc / (S5 + eps)
-    
-    @staticmethod
-    def calc_height_water_ratio(max_height, water):
-        eps = 1e-7
-        return max_height / (water + eps + 1.0)
-    
-    @staticmethod
-    def calc_radiation_balance_ratio(ILWR, OLWR):
-        eps = 1e-7
-        return ILWR / (OLWR + eps)
-    
-    def compute_derived_features(self, X):
-        if len(self.computable_features) == 0:
-            return None
-        
-        derived_list = []
-        
-        for derived_name, info in self.computable_features.items():
-            indices = info['indices']
-            calc_fn_name = info['calc_fn']
-            
-            feature_tensors = [X[:, idx:idx+1] for idx in indices]
-            calc_fn = getattr(self, calc_fn_name)
-            derived_value = calc_fn(*[tf.squeeze(t, axis=1) for t in feature_tensors])
-            
-            if len(derived_value.shape) == 1:
-                derived_value = tf.expand_dims(derived_value, axis=1)
-            
-            derived_list.append(derived_value)
-        
-        return tf.concat(derived_list, axis=1)
+    return knn_imputer, scaler, available_features
+
+# Simple imputer for fallback
+from sklearn.impute import SimpleImputer
 
 
 # ============================================
@@ -9422,8 +9350,6 @@ if analysis_mode == "📍 Single Point":
         
         weights_path = "model_reduced_weights.weights.h5"
         config_path = "model_reduced_config.json"
-        scaler_path = "scaler_reduced.joblib"
-        imputer_path = "imputer_reduced.joblib"
         threshold_path = "threshold_reduced.txt"
         
         use_ml_model = False
@@ -9432,8 +9358,8 @@ if analysis_mode == "📍 Single Point":
             if not TF_AVAILABLE:
                 raise ImportError("TensorFlow not available")
             
-            # Check if all model files exist
-            if all(os.path.exists(p) for p in [weights_path, config_path, scaler_path, imputer_path]):
+            # Check if model files exist
+            if all(os.path.exists(p) for p in [weights_path, config_path]):
                 
                 # Load model configuration
                 with open(config_path, 'r') as f:
@@ -9444,7 +9370,7 @@ if analysis_mode == "📍 Single Point":
                 input_dim = model_config.get('input_dim', len(feature_names))
                 dropout_rate = model_config.get('dropout_rate', 0.25)
                 
-                # Get physics indices from config
+                # Get physics indices from config (used only in PINN physics loss)
                 phys_indices = model_config.get('phys_indices', {
                     'ISWR': None, 'ILWR': None, 'OLWR': None, 'Qs': None, 'Ql': None
                 })
@@ -9460,10 +9386,59 @@ if analysis_mode == "📍 Single Point":
                 
                 input_data = pd.DataFrame([input_values], columns=feature_names)
                 
+                # Create KNN imputer from training datasets (loaded from GitHub)
+                # This fills in missing features based on similar conditions in training data
+                knn_result = create_knn_imputer_from_datasets(feature_names)
+                
+                if knn_result[0] is not None:
+                    knn_imputer, dataset_scaler, available_features = knn_result
+                    
+                    # Ensure input_data has all required features in the right order
+                    input_aligned = pd.DataFrame(columns=available_features)
+                    for col in available_features:
+                        if col in input_data.columns:
+                            input_aligned[col] = input_data[col].values
+                        else:
+                            input_aligned[col] = np.nan
+                    
+                    # Scale, impute, then the data is ready for the model
+                    # First simple impute any completely missing columns for scaling
+                    simple_imp = SimpleImputer(strategy='mean')
+                    input_simple = simple_imp.fit_transform(input_aligned)
+                    
+                    # Scale with the dataset scaler
+                    input_scaled_for_knn = dataset_scaler.transform(input_simple)
+                    
+                    # Apply KNN imputation (fills based on 5 nearest neighbors in training data)
+                    input_imputed = knn_imputer.transform(input_scaled_for_knn)
+                    
+                    # The data is already scaled, ready for model
+                    input_scaled = input_imputed
+                    
+                    # Log how many features were imputed
+                    n_missing = input_data.isna().sum().sum()
+                    st.session_state.knn_imputation_info = {
+                        'features_imputed': int(n_missing),
+                        'total_features': len(feature_names),
+                        'features_from_satellite': len(feature_names) - int(n_missing)
+                    }
+                else:
+                    # Fallback: try to load saved imputer/scaler if KNN from datasets failed
+                    scaler_path = "scaler_reduced.joblib"
+                    imputer_path = "imputer_reduced.joblib"
+                    
+                    if os.path.exists(scaler_path) and os.path.exists(imputer_path):
+                        scaler = joblib.load(scaler_path)
+                        imputer = joblib.load(imputer_path)
+                        input_imputed = imputer.transform(input_data)
+                        input_scaled = scaler.transform(input_imputed)
+                    else:
+                        raise ValueError("Could not load KNN imputer from datasets or saved files")
+                
                 # Create OptimizedSafetyPINN with saved configuration
                 model = OptimizedSafetyPINN(
                     phys_idx=phys_indices,
-                    input_dim=input_dim,
+                    input_dim=len(available_features) if knn_result[0] is not None else input_dim,
                     focal_alpha=model_config.get('focal_alpha', 0.90),
                     focal_gamma=model_config.get('focal_gamma', 3.0),
                     f2_weight=model_config.get('f2_weight', 2.5),
@@ -9476,15 +9451,11 @@ if analysis_mode == "📍 Single Point":
                 )
                 
                 # Build model by calling it once with dummy data
-                dummy_input = tf.zeros((1, input_dim))
+                dummy_input = tf.zeros((1, input_scaled.shape[1]))
                 _ = model(dummy_input)
                 
                 # Load trained weights
                 model.load_weights(weights_path)
-                
-                # Load scaler and KNN imputer
-                scaler = joblib.load(scaler_path)
-                imputer = joblib.load(imputer_path)  # KNN imputer for flexible input
                 
                 # Load threshold
                 optimal_threshold = 0.5  # Default
@@ -9502,11 +9473,8 @@ if analysis_mode == "📍 Single Point":
                         else:
                             optimal_threshold = float(content)
                 
-                # Preprocess input with KNN imputation
-                input_imputed = imputer.transform(input_data)
-                input_scaled = scaler.transform(input_imputed)
-                
                 # Get prediction - OptimizedSafetyPINN returns (avalanche_pred, physics_pred)
+                # Physics is only used in the model's internal loss function, not for feature calculation
                 aval_pred, phys_pred = model(tf.constant(input_scaled, dtype=tf.float32), training=False)
                 avalanche_probability = float(aval_pred[0][0])
                 
@@ -9514,17 +9482,18 @@ if analysis_mode == "📍 Single Point":
                 model_confidence = abs(avalanche_probability - 0.5) * 2
                 use_ml_model = True
                 
-                # Log physics features used
-                physics_info = model_config.get('physics_info', {})
-                if physics_info:
-                    st.session_state.physics_features_used = {
-                        'base_features': physics_info.get('base_features', input_dim),
-                        'derived_features': physics_info.get('derived_features', 0),
-                        'derived_names': physics_info.get('derived_names', [])
+                # Log KNN imputation info
+                if hasattr(st.session_state, 'knn_imputation_info'):
+                    st.session_state.model_info = {
+                        'type': 'OptimizedSafetyPINN',
+                        'knn_imputation': st.session_state.knn_imputation_info,
+                        'physics_in_loss': True,
+                        'physics_in_features': False  # Physics only in PINN loss, not feature calc
                     }
         
         except Exception as e:
-            pass  # Fall through to physics-based assessment
+            st.session_state.model_error = str(e)  # Store error for debugging
+            pass  # Fall through to simple risk assessment
         
         if not use_ml_model:
             # Using physics-based risk assessment (no ML model required)
