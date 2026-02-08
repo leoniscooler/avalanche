@@ -4405,6 +4405,181 @@ def display_source_verification_section(lat, lon, data_quality=None):
     st.caption("Most APIs accept coordinates in decimal degrees format. Use positive values for N/E, negative for S/W.")
 
 
+def get_verification_link_for_source(source_name, lat, lon):
+    """
+    Get a verification link for a specific data source name.
+    Maps the source names used in data_sources to their verification URLs.
+    
+    Args:
+        source_name: The name of the data source (e.g., 'Open-Meteo', 'ERA5', 'SNOTEL')
+        lat: Latitude
+        lon: Longitude
+    
+    Returns:
+        dict with 'url', 'api_url', or None if no link available
+    """
+    date_today = datetime.now().strftime('%Y-%m-%d')
+    date_yesterday = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
+    
+    # Map source names to verification links
+    source_links = {
+        # Open-Meteo variants
+        'Open-Meteo': {
+            'url': f"https://open-meteo.com/en/docs#latitude={lat}&longitude={lon}&current=temperature_2m,snow_depth,wind_speed_10m",
+            'api_url': f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current=temperature_2m,snow_depth,wind_speed_10m"
+        },
+        'Open-Meteo (Real-time)': {
+            'url': f"https://open-meteo.com/en/docs#latitude={lat}&longitude={lon}&current=temperature_2m,snow_depth,wind_speed_10m",
+            'api_url': f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current=temperature_2m,snow_depth,wind_speed_10m"
+        },
+        # ERA5 variants
+        'ERA5': {
+            'url': f"https://open-meteo.com/en/docs/historical-weather-api#latitude={lat}&longitude={lon}&start_date={date_yesterday}&end_date={date_today}",
+            'api_url': f"https://archive-api.open-meteo.com/v1/era5?latitude={lat}&longitude={lon}&start_date={date_yesterday}&end_date={date_today}&hourly=temperature_2m,snow_depth"
+        },
+        'ERA5 (estimated)': {
+            'url': f"https://open-meteo.com/en/docs/historical-weather-api#latitude={lat}&longitude={lon}&start_date={date_yesterday}&end_date={date_today}",
+            'api_url': f"https://archive-api.open-meteo.com/v1/era5?latitude={lat}&longitude={lon}&start_date={date_yesterday}&end_date={date_today}&hourly=temperature_2m,snow_depth"
+        },
+        'ERA5/Open-Meteo': {
+            'url': f"https://open-meteo.com/en/docs/historical-weather-api#latitude={lat}&longitude={lon}",
+            'api_url': f"https://archive-api.open-meteo.com/v1/era5?latitude={lat}&longitude={lon}&start_date={date_yesterday}&end_date={date_today}&hourly=snow_depth"
+        },
+        # GOES/CERES
+        'GOES/CERES': {
+            'url': 'https://power.larc.nasa.gov/data-access-viewer/',
+            'api_url': f"https://power.larc.nasa.gov/api/temporal/daily/point?parameters=ALLSKY_SFC_SW_DWN,ALLSKY_SFC_LW_DWN&community=RE&longitude={lon}&latitude={lat}&start=20240101&end={date_today.replace('-', '')}&format=JSON"
+        },
+        # SNOTEL
+        'SNOTEL': {
+            'url': f"https://wcc.sc.egov.usda.gov/nwcc/tabget?state=&report=STAND&format=HTML&lat={lat}&lon={lon}&radius=50",
+            'api_url': f"https://wcc.sc.egov.usda.gov/awdbRestApi/services/v1/stations?networkCodes=SNTL&minLatitude={lat-0.5}&maxLatitude={lat+0.5}&minLongitude={lon-0.5}&maxLongitude={lon+0.5}"
+        },
+        # SNODAS
+        'SNODAS': {
+            'url': 'https://nsidc.org/data/g02158',
+            'api_url': f"https://cmr.earthdata.nasa.gov/search/granules.json?short_name=G02158&bounding_box={lon-0.1},{lat-0.1},{lon+0.1},{lat+0.1}"
+        },
+        # GlobSnow
+        'GlobSnow': {
+            'url': 'https://www.globsnow.info/',
+            'api_url': None
+        },
+        # AMSR2
+        'AMSR2': {
+            'url': 'https://nsidc.org/data/au_dysno',
+            'api_url': f"https://cmr.earthdata.nasa.gov/search/granules.json?short_name=AU_DySno&bounding_box={lon-1},{lat-1},{lon+1},{lat+1}"
+        },
+        # GPM
+        'GPM Satellite': {
+            'url': 'https://gpm.nasa.gov/data/directory',
+            'api_url': f"https://cmr.earthdata.nasa.gov/search/granules.json?short_name=GPM_3IMERGHH&bounding_box={lon-0.5},{lat-0.5},{lon+0.5},{lat+0.5}"
+        },
+        'GPM': {
+            'url': 'https://gpm.nasa.gov/data/directory',
+            'api_url': f"https://cmr.earthdata.nasa.gov/search/granules.json?short_name=GPM_3IMERGHH&bounding_box={lon-0.5},{lat-0.5},{lon+0.5},{lat+0.5}"
+        },
+        # ICESat-2
+        'ICESat-2': {
+            'url': 'https://nsidc.org/data/icesat-2',
+            'api_url': f"https://cmr.earthdata.nasa.gov/search/granules.json?short_name=ATL06&bounding_box={lon-0.25},{lat-0.25},{lon+0.25},{lat+0.25}"
+        },
+        'ICESat-2 (10cm accuracy)': {
+            'url': 'https://nsidc.org/data/icesat-2',
+            'api_url': f"https://cmr.earthdata.nasa.gov/search/granules.json?short_name=ATL06&bounding_box={lon-0.25},{lat-0.25},{lon+0.25},{lat+0.25}"
+        },
+        # MODIS
+        'MODIS': {
+            'url': f"https://worldview.earthdata.nasa.gov/?v={lon-2},{lat-2},{lon+2},{lat+2}&l=MODIS_Terra_Snow_Cover&t={date_yesterday}",
+            'api_url': f"https://cmr.earthdata.nasa.gov/search/granules.json?short_name=MOD10A1&bounding_box={lon-0.5},{lat-0.5},{lon+0.5},{lat+0.5}"
+        },
+        # VIIRS
+        'VIIRS': {
+            'url': 'https://lpdaac.usgs.gov/products/vnp21a1v002/',
+            'api_url': f"https://cmr.earthdata.nasa.gov/search/granules.json?short_name=VNP21A1&version=002&bounding_box={lon-0.25},{lat-0.25},{lon+0.25},{lat+0.25}"
+        },
+        # Sentinel
+        'Sentinel': {
+            'url': f"https://dataspace.copernicus.eu/browser/?zoom=10&lat={lat}&lng={lon}",
+            'api_url': f"https://catalogue.dataspace.copernicus.eu/odata/v1/Products?$filter=OData.CSC.Intersects(area=geography'SRID=4326;POINT({lon} {lat})')&$top=5"
+        },
+        'Sentinel-1': {
+            'url': f"https://dataspace.copernicus.eu/browser/?zoom=10&lat={lat}&lng={lon}&dataset=sentinel-1",
+            'api_url': f"https://catalogue.dataspace.copernicus.eu/odata/v1/Products?$filter=Collection/Name eq 'SENTINEL-1' and OData.CSC.Intersects(area=geography'SRID=4326;POINT({lon} {lat})')&$top=5"
+        },
+        # MesoWest
+        'MesoWest': {
+            'url': f"https://mesowest.utah.edu/cgi-bin/droman/meso_base_dyn.cgi?lat={lat}&lon={lon}&radius=50",
+            'api_url': None
+        },
+        # Open-Meteo estimated
+        'Open-Meteo (estimated)': {
+            'url': f"https://open-meteo.com/en/docs#latitude={lat}&longitude={lon}",
+            'api_url': f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current=snow_depth"
+        },
+        # Copernicus
+        'Copernicus': {
+            'url': 'https://land.copernicus.eu/global/products/snow',
+            'api_url': None
+        },
+        # Multi-model
+        'Multi-Model': {
+            'url': f"https://open-meteo.com/en/docs#latitude={lat}&longitude={lon}&models=best_match,gfs_seamless,icon_seamless",
+            'api_url': f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&hourly=temperature_2m&models=best_match,gfs_seamless"
+        },
+    }
+    
+    # Try exact match first
+    if source_name in source_links:
+        return source_links[source_name]
+    
+    # Try partial matches
+    source_lower = source_name.lower()
+    for key, value in source_links.items():
+        if key.lower() in source_lower or source_lower in key.lower():
+            return value
+    
+    return None
+
+
+def render_data_with_verification(param_name, value, formatted_value, source_name, lat, lon, unit_label=""):
+    """
+    Render a data value with its source and verification link.
+    Returns HTML string for the metric display.
+    """
+    link_info = get_verification_link_for_source(source_name, lat, lon)
+    
+    # Check if this is a calculated/derived value (no external verification)
+    is_calculated = any(x in source_name.lower() for x in ['calculated', 'derived', 'estimated', 'physics', 'default', 'system'])
+    
+    if link_info and not is_calculated:
+        url = link_info.get('url', '#')
+        api_url = link_info.get('api_url')
+        
+        link_html = f'<a href="{url}" target="_blank" style="color: #3b82f6; text-decoration: none; font-size: 0.7rem;">🔗 Verify</a>'
+        if api_url:
+            link_html += f' <a href="{api_url}" target="_blank" style="color: #10b981; text-decoration: none; font-size: 0.7rem;">📡 API</a>'
+        
+        return f"""
+        <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 0.5rem; margin: 0.25rem 0;">
+            <div style="font-size: 0.75rem; color: #64748b; margin-bottom: 0.25rem;">{param_name}</div>
+            <div style="font-size: 1.25rem; font-weight: 600; color: #1e293b;">{formatted_value}</div>
+            <div style="font-size: 0.7rem; color: #94a3b8; margin-top: 0.25rem;">
+                📡 {source_name} {link_html}
+            </div>
+        </div>
+        """
+    else:
+        icon = "🔬" if is_calculated else "📡"
+        return f"""
+        <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 0.5rem; margin: 0.25rem 0;">
+            <div style="font-size: 0.75rem; color: #64748b; margin-bottom: 0.25rem;">{param_name}</div>
+            <div style="font-size: 1.25rem; font-weight: 600; color: #1e293b;">{formatted_value}</div>
+            <div style="font-size: 0.7rem; color: #94a3b8; margin-top: 0.25rem;">{icon} {source_name}</div>
+        </div>
+        """
+
+
 # ============================================
 # 7-DAY AVALANCHE RISK FORECAST
 # ============================================
@@ -7023,19 +7198,66 @@ if analysis_mode == "🗺️ Route Analysis":
                 winds = [wp.get('wind_speed') for wp in waypoint_risks if wp.get('wind_speed') is not None]
                 elevs = [wp.get('elevation') for wp in waypoint_risks if wp.get('elevation') is not None]
                 
-                col1, col2, col3 = st.columns(3)
+                lat = route_loc.get('latitude', 0)
+                lon = route_loc.get('longitude', 0)
+                
+                st.markdown(f"""
+                <div style="background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 8px; 
+                            padding: 0.75rem; margin-bottom: 1rem; font-size: 0.85rem;">
+                    <strong>📍 Route Midpoint:</strong> {lat:.4f}°N, {lon:.4f}°E<br>
+                    <span style="color: #0369a1; font-size: 0.8rem;">🔗 Click "Verify" links to check data from each source</span>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                col1, col2 = st.columns(2)
                 with col1:
                     if temps:
-                        st.metric("Avg Temperature", format_temp(sum(temps)/len(temps)))
+                        avg_temp = sum(temps)/len(temps)
+                        st.markdown(render_data_with_verification(
+                            "Avg Temperature", avg_temp, format_temp(avg_temp), "Open-Meteo", lat, lon
+                        ), unsafe_allow_html=True)
                         st.caption(f"Range: {format_temp(min(temps))} to {format_temp(max(temps))}")
                 with col2:
                     if winds:
-                        st.metric("Avg Wind Speed", format_speed(sum(winds)/len(winds), 'wind'))
+                        avg_wind = sum(winds)/len(winds)
+                        st.markdown(render_data_with_verification(
+                            "Avg Wind Speed", avg_wind, format_speed(avg_wind, 'wind'), "Open-Meteo", lat, lon
+                        ), unsafe_allow_html=True)
                         st.caption(f"Max: {format_speed(max(winds), 'wind')}")
-                with col3:
+                
+                col1, col2 = st.columns(2)
+                with col1:
                     if elevs:
-                        st.metric("Elevation Range", f"{min(elevs):.0f} - {max(elevs):.0f}m")
+                        st.markdown(render_data_with_verification(
+                            "Elevation Range", max(elevs) - min(elevs), 
+                            f"{min(elevs):.0f} - {max(elevs):.0f}m", "Open-Elevation API", lat, lon
+                        ), unsafe_allow_html=True)
                         st.caption(f"Gain: {max(elevs) - min(elevs):.0f}m")
+                
+                # Data source links for route mode
+                with st.expander("📊 Data Sources & Verification Links"):
+                    st.markdown("**Route data sources:**")
+                    
+                    route_sources = [
+                        ('Open-Meteo', 'Temperature, Wind Speed, Precipitation'),
+                        ('Open-Elevation API', 'Terrain Elevation'),
+                    ]
+                    
+                    for source, params in route_sources:
+                        link_info = get_verification_link_for_source(source, lat, lon)
+                        if link_info:
+                            url = link_info.get('url', '#')
+                            api_url = link_info.get('api_url')
+                            link_html = f'<a href="{url}" target="_blank">🔗 Website</a>'
+                            if api_url:
+                                link_html += f' | <a href="{api_url}" target="_blank">📡 API</a>'
+                            st.markdown(f"• **{source}**: {params} - {link_html}", unsafe_allow_html=True)
+                        else:
+                            st.markdown(f"• **{source}**: {params}")
+                    
+                    st.markdown("---")
+                    st.markdown("**📋 Coordinates for manual verification:**")
+                    st.code(f"Latitude: {lat:.6f}\nLongitude: {lon:.6f}")
             else:
                 st.info("No detailed conditions available")
         
@@ -7098,26 +7320,6 @@ if analysis_mode == "🗺️ Route Analysis":
             - **Moderate Risk:** {len(mod_risk_segments)}
             - **Low Risk:** {len(waypoint_risks) - len(high_risk_segments) - len(mod_risk_segments)}
             """)
-            
-            # Source Verification Links Section for Route Mode
-            st.markdown("---")
-            st.markdown("### 🔍 Verify Source Data")
-            st.markdown("""
-            <div style="background: #fef3c7; border-left: 4px solid #f59e0b; padding: 0.75rem 1rem; 
-                        border-radius: 0 8px 8px 0; margin: 0.5rem 0; font-size: 0.9rem;">
-                <strong>Want to verify the data?</strong> Click the links below to access each data source 
-                directly. Coordinates shown are for the route midpoint - you can modify them to check any point along your route.
-            </div>
-            """, unsafe_allow_html=True)
-            
-            if route_loc and route_loc.get('latitude', 0) != 0:
-                display_source_verification_section(
-                    route_loc['latitude'], 
-                    route_loc['longitude'],
-                    None  # No data quality tracking for route mode currently
-                )
-            else:
-                st.info("Draw a route to see verification links.")
             
             st.markdown("---")
             st.caption("⚠️ Route analysis provides estimates based on available data. Always verify conditions on the ground and check local avalanche bulletins.")
@@ -7704,6 +7906,9 @@ else:
         with tab_conditions:
             if st.session_state.env_data:
                 env = st.session_state.env_data
+                loc = st.session_state.location
+                lat = loc.get('latitude', 0) if loc else 0
+                lon = loc.get('longitude', 0) if loc else 0
                 
                 # Show data verification info
                 if st.session_state.satellite_raw:
@@ -7725,7 +7930,8 @@ else:
                     <div style="background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 8px; 
                                 padding: 0.75rem; margin-bottom: 1rem; font-size: 0.85rem;">
                         <strong>📍 Data Location:</strong> {data_loc.get('lat', 0):.4f}°N, {data_loc.get('lon', 0):.4f}°E<br>
-                        <strong>⏱️ Last Updated:</strong> {timestamp[:19] if len(timestamp) > 19 else timestamp}{coord_note}
+                        <strong>⏱️ Last Updated:</strong> {timestamp[:19] if len(timestamp) > 19 else timestamp}{coord_note}<br>
+                        <span style="color: #0369a1; font-size: 0.8rem;">🔗 Click "Verify" links below to check raw data from each source</span>
                     </div>
                     """, unsafe_allow_html=True)
                 
@@ -7735,55 +7941,99 @@ else:
                     for param, source in st.session_state.data_sources:
                         data_sources_dict[param] = source
                 
-                col1, col2, col3, col4 = st.columns(4)
+                st.markdown("### 📊 Primary Conditions")
+                col1, col2 = st.columns(2)
                 with col1:
                     temp = env.get('TA') or 0
                     temp_source = data_sources_dict.get('TA', 'Unknown')
-                    st.metric("Temperature", format_temp(temp))
-                    st.caption(f"📡 {temp_source}")
+                    st.markdown(render_data_with_verification(
+                        "Temperature", temp, format_temp(temp), temp_source, lat, lon
+                    ), unsafe_allow_html=True)
+                    
+                    radiation = env.get('ISWR_daily') or 0
+                    rad_source = data_sources_dict.get('ISWR_daily', 'Unknown')
+                    st.markdown(render_data_with_verification(
+                        "Solar Radiation", radiation, format_radiation(radiation), rad_source, lat, lon
+                    ), unsafe_allow_html=True)
+                
                 with col2:
                     snow_m = env.get('max_height') or 0
                     snow_change_m = env.get('max_height_1_diff') or 0
                     snow_source = data_sources_dict.get('max_height', 'Unknown')
                     snow_display = format_snow_depth(snow_m)
-                    snow_change_display = format_snow_depth(snow_change_m) if snow_change_m != 0 else "0"
-                    delta_str = f"+{snow_change_display}" if snow_change_m > 0 else f"{snow_change_display}" if snow_change_m < 0 else "0/24h"
-                    st.metric("Snow Depth", snow_display, delta=f"{delta_str}/24h" if snow_change_m != 0 else "0/24h")
-                    st.caption(f"📡 {snow_source}")
-                with col3:
-                    radiation = env.get('ISWR_daily') or 0
-                    rad_source = data_sources_dict.get('ISWR_daily', 'Unknown')
-                    st.metric("Solar Radiation", format_radiation(radiation))
-                    st.caption(f"📡 {rad_source}")
-                with col4:
+                    if snow_change_m != 0:
+                        snow_change_display = format_snow_depth(abs(snow_change_m))
+                        delta_str = f" (+{snow_change_display}/24h)" if snow_change_m > 0 else f" (-{snow_change_display}/24h)"
+                    else:
+                        delta_str = ""
+                    st.markdown(render_data_with_verification(
+                        "Snow Depth", snow_m, f"{snow_display}{delta_str}", snow_source, lat, lon
+                    ), unsafe_allow_html=True)
+                    
                     stability = env.get('S5') or 2.5
-                    st.metric("Stability Index", f"{stability:.2f}")
-                    st.caption("📡 Calculated")
+                    st.markdown(render_data_with_verification(
+                        "Stability Index", stability, f"{stability:.2f}", "Calculated (Physics Model)", lat, lon
+                    ), unsafe_allow_html=True)
                 
                 # Additional weather metrics with sources
                 st.markdown("---")
-                st.markdown("**Additional Conditions:**")
+                st.markdown("### 🌡️ Additional Conditions")
                 
-                col1, col2, col3, col4 = st.columns(4)
+                col1, col2 = st.columns(2)
                 with col1:
                     temp_daily = env.get('TA_daily') or 0
                     daily_source = data_sources_dict.get('TA_daily', 'Unknown')
-                    st.metric("Daily Avg Temp", format_temp(temp_daily))
-                    st.caption(f"📡 {daily_source}")
+                    st.markdown(render_data_with_verification(
+                        "Daily Avg Temperature", temp_daily, format_temp(temp_daily), daily_source, lat, lon
+                    ), unsafe_allow_html=True)
+                    
+                    swe = env.get('SWE_daily') or 0
+                    swe_source = data_sources_dict.get('SWE_daily', 'Unknown')
+                    st.markdown(render_data_with_verification(
+                        "Snow Water Equivalent", swe, format_precip(swe), swe_source, lat, lon
+                    ), unsafe_allow_html=True)
+                
                 with col2:
                     rain = env.get('MS_Rain_daily') or 0
                     rain_source = data_sources_dict.get('MS_Rain_daily', 'Unknown')
-                    st.metric("Precip (24h)", format_precip(rain))
-                    st.caption(f"📡 {rain_source}")
-                with col3:
-                    swe = env.get('SWE_daily') or 0
-                    swe_source = data_sources_dict.get('SWE_daily', 'Unknown')
-                    st.metric("Snow Water Equiv", format_precip(swe))
-                    st.caption(f"📡 {swe_source}")
-                with col4:
+                    st.markdown(render_data_with_verification(
+                        "Precipitation (24h)", rain, format_precip(rain), rain_source, lat, lon
+                    ), unsafe_allow_html=True)
+                    
                     lwc = env.get('mean_lwc') or 0
-                    st.metric("Liquid Water", f"{lwc:.1f}%")
-                    st.caption("📡 Calculated")
+                    st.markdown(render_data_with_verification(
+                        "Liquid Water Content", lwc, f"{lwc:.1f}%", "Calculated (Physics Model)", lat, lon
+                    ), unsafe_allow_html=True)
+                
+                # Radiation data section
+                st.markdown("---")
+                st.markdown("### ☀️ Radiation Data")
+                col1, col2 = st.columns(2)
+                with col1:
+                    ilwr = env.get('ILWR') or 0
+                    ilwr_source = data_sources_dict.get('ILWR', 'Unknown')
+                    st.markdown(render_data_with_verification(
+                        "Incoming Longwave", ilwr, f"{ilwr:.1f} W/m²", ilwr_source, lat, lon
+                    ), unsafe_allow_html=True)
+                    
+                    olwr = env.get('OLWR') or 0
+                    olwr_source = data_sources_dict.get('OLWR', 'Unknown')
+                    st.markdown(render_data_with_verification(
+                        "Outgoing Longwave", olwr, f"{olwr:.1f} W/m²", olwr_source, lat, lon
+                    ), unsafe_allow_html=True)
+                
+                with col2:
+                    ilwr_daily = env.get('ILWR_daily') or 0
+                    ilwr_d_source = data_sources_dict.get('ILWR_daily', 'Unknown')
+                    st.markdown(render_data_with_verification(
+                        "Daily Avg Longwave In", ilwr_daily, f"{ilwr_daily:.1f} W/m²", ilwr_d_source, lat, lon
+                    ), unsafe_allow_html=True)
+                    
+                    tss = env.get('TSS_mod') or 0
+                    tss_source = data_sources_dict.get('TSS_mod', 'Unknown')
+                    st.markdown(render_data_with_verification(
+                        "Snow Surface Temp", tss, format_temp(tss), tss_source, lat, lon
+                    ), unsafe_allow_html=True)
                 
                 # Stability interpretation
                 st.markdown("---")
@@ -7796,10 +8046,10 @@ else:
                 else:
                     st.success("Good stability - lower avalanche potential")
                 
-                # Data quality summary
-                with st.expander("📊 Data Sources & Quality"):
+                # Data quality summary - show all fetched sources with links
+                with st.expander("📊 All Data Sources & Verification Links"):
                     if st.session_state.data_sources:
-                        st.markdown("**Data sources used for this assessment:**")
+                        st.markdown("**Click links to verify data from each source:**")
                         
                         # Group by source type
                         sources_by_type = {}
@@ -7808,11 +8058,42 @@ else:
                                 sources_by_type[source] = []
                             sources_by_type[source].append(param)
                         
-                        for source, params in sorted(sources_by_type.items()):
+                        # Filter to only show satellite/fetched sources (not calculated)
+                        fetched_sources = {k: v for k, v in sources_by_type.items() 
+                                          if not any(x in k.lower() for x in ['calculated', 'physics', 'system', 'default'])}
+                        
+                        for source, params in sorted(fetched_sources.items()):
+                            link_info = get_verification_link_for_source(source, lat, lon)
                             params_str = ", ".join(params[:5])
                             if len(params) > 5:
                                 params_str += f" (+{len(params)-5} more)"
-                            st.markdown(f"• **{source}**: {params_str}")
+                            
+                            if link_info:
+                                url = link_info.get('url', '#')
+                                api_url = link_info.get('api_url')
+                                link_html = f'<a href="{url}" target="_blank">🔗 Website</a>'
+                                if api_url:
+                                    link_html += f' | <a href="{api_url}" target="_blank">📡 API</a>'
+                                st.markdown(f"""• **{source}**: {params_str} - {link_html}""", unsafe_allow_html=True)
+                            else:
+                                st.markdown(f"• **{source}**: {params_str}")
+                        
+                        # Show calculated sources separately
+                        calculated_sources = {k: v for k, v in sources_by_type.items() 
+                                             if any(x in k.lower() for x in ['calculated', 'physics', 'system'])}
+                        if calculated_sources:
+                            st.markdown("---")
+                            st.markdown("**Derived/Calculated values** (not from external sources):")
+                            for source, params in sorted(calculated_sources.items()):
+                                params_str = ", ".join(params[:5])
+                                if len(params) > 5:
+                                    params_str += f" (+{len(params)-5} more)"
+                                st.markdown(f"• 🔬 **{source}**: {params_str}")
+                    
+                    # Coordinate box for manual verification
+                    st.markdown("---")
+                    st.markdown("**📋 Coordinates for manual verification:**")
+                    st.code(f"Latitude: {lat:.6f}\nLongitude: {lon:.6f}\nDecimal: {lat:.4f}, {lon:.4f}")
             else:
                 st.info("No environmental data available")
         
@@ -7988,31 +8269,6 @@ else:
                                 clean_name = name.replace("(", "").replace(")", "").replace("Western US", "").strip()[:25]
                                 icon = "✓" if status == 'success' else "○"
                                 st.markdown(f"{icon} {clean_name}")
-            
-            # Source Verification Links Section
-            st.markdown("---")
-            st.markdown("### 🔍 Verify Source Data")
-            st.markdown("""
-            <div style="background: #fef3c7; border-left: 4px solid #f59e0b; padding: 0.75rem 1rem; 
-                        border-radius: 0 8px 8px 0; margin: 0.5rem 0; font-size: 0.9rem;">
-                <strong>Want to verify the data?</strong> Click the links below to access each data source 
-                directly with your coordinates pre-filled. Compare the raw values to what this tool reports.
-            </div>
-            """, unsafe_allow_html=True)
-            
-            loc = st.session_state.location
-            if loc and loc.get('latitude') and loc.get('longitude'):
-                data_quality = None
-                if st.session_state.satellite_raw:
-                    data_quality = st.session_state.satellite_raw.get('data_quality', {})
-                
-                display_source_verification_section(
-                    loc['latitude'], 
-                    loc['longitude'],
-                    data_quality
-                )
-            else:
-                st.info("Run an assessment to see verification links for your location.")
             
             st.markdown("---")
             st.caption("⚠️ This tool provides estimates and should not replace professional avalanche forecasts. Always check with local avalanche centers.")
