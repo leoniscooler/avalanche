@@ -8938,20 +8938,51 @@ else:
         
         # TAB 5: Details
         with tab_details:
-            st.markdown("**Assessment Method:**")
+            st.markdown("**🧠 Machine Learning Model:**")
             st.markdown("""
-            This assessment uses a Physics-Informed Neural Network (PINN) that combines:
-            - Real-time satellite observations (MODIS, VIIRS)
-            - ERA5 reanalysis data
-            - Weather station networks (SNOTEL, MesoWest)
-            - Physical snowpack mechanics
+            **OptimizedSafetyPINN** - A Physics-Informed Neural Network optimized for safety:
+            - **Architecture**: 256→256→128→128→64 with attention mechanism & residual connections
+            - **Training**: ~50,000 snow profiles from Swiss/US mountain stations
+            - **Focus**: 90% weight on detecting avalanches (high recall to minimize missed dangers)
+            - **Dual Output**: Avalanche probability + physics-constrained temperature prediction
             """)
+            
+            st.markdown("**🔄 KNN Data Imputation:**")
+            st.markdown("""
+            Missing satellite data is filled using **K-Nearest Neighbors** (k=5, distance-weighted):
+            - Loads 4 training datasets from GitHub
+            - Finds 5 most similar historical snow conditions
+            - Uses their feature values to estimate missing data
+            """)
+            
+            # Show imputation stats if available
+            if hasattr(st.session_state, 'knn_imputation_info'):
+                info = st.session_state.knn_imputation_info
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Features from Satellite", info.get('features_from_satellite', 'N/A'))
+                with col2:
+                    st.metric("Features Imputed (KNN)", info.get('features_imputed', 'N/A'))
+                with col3:
+                    st.metric("Total Features", info.get('total_features', 38))
+            
+            st.markdown("**⚡ Physics in Loss Function:**")
+            st.markdown("""
+            The model enforces thermodynamic consistency via energy balance in its loss:
+            ```
+            Q_net = ISWR + ILWR - OLWR + Qs + Ql
+            ```
+            (Shortwave + Longwave In - Longwave Out + Sensible Heat + Latent Heat)
+            """)
+            
+            st.markdown("---")
+            st.markdown("**📡 Data Sources:**")
             
             if st.session_state.satellite_raw:
                 raw = st.session_state.satellite_raw
                 if 'summary' in raw:
                     summary = raw['summary']
-                    st.markdown(f"**Data Sources:** {summary['successful_sources']} of {summary['total_sources']} sources connected")
+                    st.markdown(f"**Connected:** {summary['successful_sources']} of {summary['total_sources']} sources")
                     
                     with st.expander("View all data sources"):
                         cols = st.columns(3)
@@ -9267,26 +9298,30 @@ else:
 st.sidebar.markdown("---")
 st.sidebar.markdown("### About")
 st.sidebar.markdown("""
-This tool uses a **Physics-Enhanced Neural Network** that combines machine learning with 15 physics equations for avalanche risk assessment.
+This tool uses an **OptimizedSafetyPINN** (Physics-Informed Neural Network) designed to maximize avalanche detection.
 
-**Model Features:**
-- **Flexible Input**: Works with any number of available features
-- **Physics Augmentation**: Automatically computes derived features like net radiation, melt potential, vapor pressure deficit, etc.
-- **Knowledge Distillation**: Trained using a PINN teacher model
+**Model Architecture:**
+- **Attention Mechanism**: Learns which features matter most
+- **Deep Residual Network**: 256→256→128→128→64 with skip connections
+- **Dual Output**: Avalanche probability + physics prediction
+- **Safety Focus**: 90% weight on catching avalanches (high recall)
 
-**Physics Equations Used:**
-- Stefan-Boltzmann Law (thermal radiation)
-- Net Radiation Balance
-- Clausius-Clapeyron (vapor pressure)
-- Bowen Ratio (heat flux partitioning)
-- Melt Potential Index
-- Snow Stability Index
+**KNN Imputation:**
+- Loads 4 training datasets (~50,000+ samples)
+- Fills missing satellite data using 5 nearest neighbors
+- Based on similar historical snow conditions
+
+**Physics Loss (PINN):**
+- Energy balance equation in loss function
+- `Q_net = ISWR + ILWR - OLWR + Qs + Ql`
+- Ensures predictions respect thermodynamics
 
 **Data Sources:**
 - MODIS & VIIRS satellites
-- ERA5 reanalysis
-- SNOTEL network
-- Local weather stations
+- ERA5 reanalysis (31km)
+- SNOTEL ground stations
+- SNODAS (1km US snow analysis)
+- Open-Meteo real-time weather
 """)
 
 st.sidebar.markdown("---")
@@ -9595,17 +9630,23 @@ st.markdown("---")
 # Minimal footer with expandable details
 with st.expander("Data sources and methodology"):
     st.markdown("""
+    **Machine Learning Model:**
+    OptimizedSafetyPINN - A Physics-Informed Neural Network trained on 50,000+ snow profiles
+    from Swiss and US mountain stations. Optimized for high recall (catching all avalanches).
+    
+    **KNN Imputation:**
+    Missing satellite data is filled using K-Nearest Neighbors (k=5) from 4 training datasets.
+    This finds the 5 most similar historical conditions and uses their values.
+    
+    **Physics Integration:**
+    The model enforces energy balance physics in its loss function:
+    `Q_net = ISWR + ILWR - OLWR + Qs + Ql` (net radiation + heat fluxes)
+    
     **Satellite Data Sources:**
-    MODIS (NASA), VIIRS (NOAA), ERA5 (ECMWF), GOES (NOAA), Sentinel (ESA)
+    MODIS (NASA), VIIRS (NOAA), ERA5 (ECMWF), GOES (NOAA), Sentinel (ESA), SNODAS (NOHRSC)
     
     **Weather Station Networks:**
     SNOTEL (NRCS), MesoWest, WMO stations
-    
-    **Methodology:**
-    This tool combines satellite observations with physics-based snowpack modeling 
-    to estimate avalanche risk. The stability index (S5) is calculated from snow depth, 
-    new snow accumulation, temperature trends, precipitation type, wind speed, and 
-    liquid water content.
     
     **Disclaimer:**
     This tool provides estimates based on available data and should not replace 
