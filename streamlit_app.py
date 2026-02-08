@@ -8665,17 +8665,18 @@ else:
                 comparisons_shown = False
                 
                 if len(snow_depth_sources) >= 2:
-                    display_comparison("❄️ Snow Depth", snow_depth_sources, "cm", threshold_pct=20)
+                    with st.expander("❄️ Snow Depth Comparison", expanded=False):
+                        display_comparison("❄️ Snow Depth", snow_depth_sources, "cm", threshold_pct=20)
                     comparisons_shown = True
-                    st.markdown("")
                 
                 if len(temperature_sources) >= 2:
-                    display_comparison("🌡️ Temperature", temperature_sources, "°C", threshold_pct=15)
+                    with st.expander("🌡️ Temperature Comparison", expanded=False):
+                        display_comparison("🌡️ Temperature", temperature_sources, "°C", threshold_pct=15)
                     comparisons_shown = True
-                    st.markdown("")
                 
                 if len(swe_sources) >= 2:
-                    display_comparison("💧 Snow Water Equivalent (SWE)", swe_sources, "mm", threshold_pct=25)
+                    with st.expander("💧 SWE Comparison", expanded=False):
+                        display_comparison("💧 Snow Water Equivalent (SWE)", swe_sources, "mm", threshold_pct=25)
                     comparisons_shown = True
                 
                 if not comparisons_shown:
@@ -8786,8 +8787,30 @@ else:
                 if model_inputs:
                     # Create a dataframe for clean display
                     import pandas as pd
-                    df = pd.DataFrame(model_inputs)
-                    st.dataframe(df, hide_index=True, use_container_width=True)
+                    with st.expander("📊 Satellite/API Input Values", expanded=False):
+                        df = pd.DataFrame(model_inputs)
+                        st.dataframe(df, hide_index=True, use_container_width=True)
+                
+                # Show KNN imputed values in a separate collapsable table
+                knn_info = st.session_state.get('knn_imputation_info', {})
+                knn_imputed = knn_info.get('knn_imputed_values', {})
+                
+                if knn_imputed:
+                    with st.expander(f"🔮 KNN Predicted Values ({len(knn_imputed)} features)", expanded=False):
+                        st.markdown("*These values were predicted by the KNN imputer (k=5, distance-weighted) based on similar conditions in the training data (~50,000 samples):*")
+                        
+                        knn_rows = []
+                        for param, value in knn_imputed.items():
+                            knn_rows.append({
+                                'Parameter': param,
+                                'KNN Predicted Value': format_value_with_imperial(param, value, use_imperial),
+                                'Source': 'KNN Imputer (k=5)'
+                            })
+                        
+                        if knn_rows:
+                            knn_df = pd.DataFrame(knn_rows)
+                            st.dataframe(knn_df, hide_index=True, use_container_width=True)
+                            st.caption(f"💡 {len(knn_imputed)} of {knn_info.get('total_features', 38)} features were imputed from training data patterns.")
                 
                 # Coordinate box for manual verification
                 st.markdown("---")
@@ -9463,12 +9486,30 @@ if analysis_mode == "📍 Single Point":
                     # The data is already scaled, ready for model
                     input_scaled = input_imputed
                     
-                    # Log how many features were imputed
+                    # Inverse transform to get imputed values in original scale for display
+                    input_imputed_original = dataset_scaler.inverse_transform(input_imputed)
+                    
+                    # Log how many features were imputed and store the values
                     n_missing = input_data.isna().sum().sum()
+                    
+                    # Track which features were imputed vs from satellite data
+                    knn_imputed_values = {}
+                    original_values = {}
+                    for idx, col in enumerate(available_features):
+                        original_val = input_aligned[col].values[0]
+                        imputed_val = input_imputed_original[0][idx]
+                        if pd.isna(original_val) or (isinstance(original_val, float) and np.isnan(original_val)):
+                            knn_imputed_values[col] = imputed_val
+                        else:
+                            original_values[col] = original_val
+                    
                     st.session_state.knn_imputation_info = {
                         'features_imputed': int(n_missing),
                         'total_features': len(feature_names),
-                        'features_from_satellite': len(feature_names) - int(n_missing)
+                        'features_from_satellite': len(feature_names) - int(n_missing),
+                        'knn_imputed_values': knn_imputed_values,
+                        'original_values': original_values,
+                        'feature_names': available_features
                     }
                 else:
                     # Fallback: try to load saved imputer/scaler if KNN from datasets failed
