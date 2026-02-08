@@ -4086,6 +4086,326 @@ def create_route_map(route_analysis, center_lat=None, center_lon=None):
 
 
 # ============================================
+# DATA SOURCE VERIFICATION LINKS
+# ============================================
+
+def get_source_verification_links(lat, lon):
+    """
+    Generate verification links for each data source where users can
+    check the raw data by entering coordinates.
+    
+    Returns a dictionary of source names to their verification URLs and info.
+    """
+    # Format coordinates for various URL patterns
+    lat_str = f"{lat:.4f}"
+    lon_str = f"{lon:.4f}"
+    date_today = datetime.now().strftime('%Y-%m-%d')
+    date_yesterday = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
+    
+    links = {
+        # === SATELLITE DATA SOURCES ===
+        'Open-Meteo (Real-time)': {
+            'url': f"https://open-meteo.com/en/docs#latitude={lat}&longitude={lon}&current=temperature_2m,relative_humidity_2m,precipitation,snow_depth,weather_code,wind_speed_10m&hourly=temperature_2m,snow_depth",
+            'api_url': f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current=temperature_2m,snow_depth,wind_speed_10m&hourly=temperature_2m,snow_depth",
+            'description': 'Real-time weather data aggregated from multiple models',
+            'how_to_verify': 'Click the link to see the API playground with your coordinates pre-filled'
+        },
+        'ERA5 Reanalysis': {
+            'url': f"https://open-meteo.com/en/docs/historical-weather-api#latitude={lat}&longitude={lon}&start_date={date_yesterday}&end_date={date_today}&hourly=temperature_2m,snow_depth,shortwave_radiation",
+            'api_url': f"https://archive-api.open-meteo.com/v1/era5?latitude={lat}&longitude={lon}&start_date={date_yesterday}&end_date={date_today}&hourly=temperature_2m,snow_depth",
+            'description': 'ECMWF ERA5 reanalysis (0.25° resolution)',
+            'how_to_verify': 'Historical data archive - compare values with assessment'
+        },
+        'NASA Earthdata (MODIS/VIIRS)': {
+            'url': f"https://search.earthdata.nasa.gov/search?q=MODIS%20snow&lat={lat}&long={lon}",
+            'api_url': f"https://cmr.earthdata.nasa.gov/search/granules.json?short_name=MOD10A1&bounding_box={lon-0.5},{lat-0.5},{lon+0.5},{lat+0.5}",
+            'description': 'MODIS and VIIRS snow products (500m-1km resolution)',
+            'how_to_verify': 'Search for MODIS/VIIRS granules covering your location'
+        },
+        'NASA GIBS (Snow Cover)': {
+            'url': f"https://worldview.earthdata.nasa.gov/?v={lon-2},{lat-2},{lon+2},{lat+2}&l=MODIS_Terra_Snow_Cover,Reference_Labels_15m,Reference_Features_15m,Coastlines_15m&t={date_yesterday}",
+            'api_url': f"https://gibs.earthdata.nasa.gov/wms/epsg4326/best/wms.cgi?SERVICE=WMS&REQUEST=GetMap&LAYERS=MODIS_Terra_Snow_Cover&FORMAT=image/png&WIDTH=256&HEIGHT=256&CRS=EPSG:4326&BBOX={lat-1},{lon-1},{lat+1},{lon+1}&TIME={date_yesterday}",
+            'description': 'NASA Global Imagery Browse Services - visual snow cover',
+            'how_to_verify': 'View MODIS snow cover imagery directly at your location'
+        },
+        'NASA POWER (GOES/CERES)': {
+            'url': f"https://power.larc.nasa.gov/data-access-viewer/",
+            'api_url': f"https://power.larc.nasa.gov/api/temporal/daily/point?parameters=ALLSKY_SFC_SW_DWN,ALLSKY_SFC_LW_DWN&community=RE&longitude={lon}&latitude={lat}&start=20240101&end={date_today.replace('-', '')}&format=JSON",
+            'description': 'CERES satellite radiation data (daily, ~1° resolution)',
+            'how_to_verify': f'Enter coordinates: Lat {lat:.4f}, Lon {lon:.4f}'
+        },
+        'Sentinel (Copernicus)': {
+            'url': f"https://dataspace.copernicus.eu/browser/?zoom=10&lat={lat}&lng={lon}",
+            'api_url': f"https://catalogue.dataspace.copernicus.eu/odata/v1/Products?$filter=OData.CSC.Intersects(area=geography'SRID=4326;POINT({lon} {lat})')&$top=5",
+            'description': 'Sentinel-1/2/3 satellite products (10m-1km resolution)',
+            'how_to_verify': 'Browse available Sentinel scenes at your location'
+        },
+        'NSIDC Snow Products': {
+            'url': f"https://nsidc.org/data/search#keywords=snow/sortKeys=score,,desc/facetFilters=%257B%257D/pageNumber=1/itemsPerPage=25",
+            'api_url': f"https://cmr.earthdata.nasa.gov/search/granules.json?short_name=AU_DySno&bounding_box={lon-1},{lat-1},{lon+1},{lat+1}",
+            'description': 'NSIDC snow and ice data products',
+            'how_to_verify': 'Search NSIDC data catalog for your region'
+        },
+        
+        # === ADVANCED SNOW PRODUCTS ===
+        'SNODAS (US Snow)': {
+            'url': 'https://nsidc.org/data/g02158',
+            'api_url': f"https://cmr.earthdata.nasa.gov/search/granules.json?short_name=G02158&bounding_box={lon-0.1},{lat-0.1},{lon+0.1},{lat+0.1}",
+            'description': 'NOAA Snow Data Assimilation System (1km, CONUS only)',
+            'how_to_verify': 'Available for Continental US only (24-53°N, 125-66°W)',
+            'coverage_check': lambda la, lo: (24 <= la <= 53 and -125 <= lo <= -66)
+        },
+        'AMSR2 Microwave SWE': {
+            'url': 'https://nsidc.org/data/au_dysno',
+            'api_url': f"https://cmr.earthdata.nasa.gov/search/granules.json?short_name=AU_DySno&bounding_box={lon-1},{lat-1},{lon+1},{lat+1}",
+            'description': 'Microwave-based SWE (25km, works through clouds)',
+            'how_to_verify': 'AMSR2 daily snow products - global coverage'
+        },
+        'MODIS Albedo': {
+            'url': f"https://lpdaac.usgs.gov/products/mcd43a3v061/",
+            'api_url': f"https://cmr.earthdata.nasa.gov/search/granules.json?short_name=MCD43A3&version=061&bounding_box={lon-0.25},{lat-0.25},{lon+0.25},{lat+0.25}",
+            'description': 'MODIS daily albedo (500m resolution)',
+            'how_to_verify': 'Search for MCD43A3 tiles covering your location'
+        },
+        'VIIRS Surface Temp': {
+            'url': 'https://lpdaac.usgs.gov/products/vnp21a1v002/',
+            'api_url': f"https://cmr.earthdata.nasa.gov/search/granules.json?short_name=VNP21A1&version=002&bounding_box={lon-0.25},{lat-0.25},{lon+0.25},{lat+0.25}",
+            'description': 'VIIRS Land Surface Temperature (750m resolution)',
+            'how_to_verify': 'Direct surface temperature measurement'
+        },
+        'Sentinel-1 SAR': {
+            'url': f"https://dataspace.copernicus.eu/browser/?zoom=10&lat={lat}&lng={lon}&dataset=sentinel-1",
+            'api_url': f"https://catalogue.dataspace.copernicus.eu/odata/v1/Products?$filter=Collection/Name eq 'SENTINEL-1' and OData.CSC.Intersects(area=geography'SRID=4326;POINT({lon} {lat})')&$top=5",
+            'description': 'SAR for wet snow detection (10m resolution)',
+            'how_to_verify': 'View recent Sentinel-1 acquisitions'
+        },
+        'GlobSnow SWE': {
+            'url': 'https://www.globsnow.info/',
+            'api_url': None,
+            'description': 'Assimilated SWE for Northern Hemisphere (25km)',
+            'how_to_verify': 'Data available for latitudes > 35°N'
+        },
+        'ICESat-2 Altimetry': {
+            'url': 'https://nsidc.org/data/icesat-2',
+            'api_url': f"https://cmr.earthdata.nasa.gov/search/granules.json?short_name=ATL06&bounding_box={lon-0.25},{lat-0.25},{lon+0.25},{lat+0.25}",
+            'description': 'Laser altimetry for precise snow elevation (70m track)',
+            'how_to_verify': 'Limited spatial coverage - orbit tracks only'
+        },
+        'Copernicus Snow': {
+            'url': 'https://land.copernicus.eu/global/products/snow',
+            'api_url': None,
+            'description': 'High-resolution fractional snow cover (500m)',
+            'how_to_verify': 'Pan-European and Northern Hemisphere coverage'
+        },
+        'GRACE Water Storage': {
+            'url': 'https://grace.jpl.nasa.gov/data/get-data/',
+            'api_url': f"https://cmr.earthdata.nasa.gov/search/granules.json?short_name=TELLUS_GRAC-GRFO_MASCON_CRI_GRID_RL06.1_V3&bounding_box={lon-2},{lat-2},{lon+2},{lat+2}",
+            'description': 'Regional water storage anomalies (~300km, monthly)',
+            'how_to_verify': 'Large-scale water mass changes'
+        },
+        
+        # === WEATHER STATION NETWORKS ===
+        'SNOTEL (Western US)': {
+            'url': f"https://wcc.sc.egov.usda.gov/nwcc/tabget?state=&report=STAND&format=HTML&station_name=&lat={lat}&lon={lon}&radius=50",
+            'api_url': f"https://wcc.sc.egov.usda.gov/awdbRestApi/services/v1/stations?networkCodes=SNTL&minLatitude={lat-0.5}&maxLatitude={lat+0.5}&minLongitude={lon-0.5}&maxLongitude={lon+0.5}",
+            'description': 'NRCS snow telemetry stations (Western US mountains)',
+            'how_to_verify': 'Find nearest SNOTEL station and compare readings',
+            'coverage_check': lambda la, lo: (30 <= la <= 50 and -125 <= lo <= -100)
+        },
+        'MesoWest Stations': {
+            'url': f"https://mesowest.utah.edu/cgi-bin/droman/meso_base_dyn.cgi?session=&lat={lat}&lon={lon}&radius=50",
+            'api_url': f"https://api.synopticdata.com/v2/stations/latest?radius={lat},{lon},30&vars=air_temp,snow_depth&token=demotoken",
+            'description': 'Regional weather station networks',
+            'how_to_verify': 'View nearby station observations'
+        },
+        'WMO Official Stations': {
+            'url': 'https://oscar.wmo.int/surface/',
+            'api_url': None,
+            'description': 'Official meteorological stations worldwide',
+            'how_to_verify': 'Search WMO OSCAR database for nearby stations'
+        },
+        
+        # === MODEL/ANALYSIS PRODUCTS ===
+        'Multi-Model Ensemble': {
+            'url': f"https://open-meteo.com/en/docs#latitude={lat}&longitude={lon}&models=best_match,gfs_seamless,icon_seamless",
+            'api_url': f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&hourly=temperature_2m&models=best_match,gfs_seamless",
+            'description': 'Multiple weather model comparison',
+            'how_to_verify': 'Compare outputs from different NWP models'
+        },
+        'ECMWF Ensemble': {
+            'url': f"https://open-meteo.com/en/docs/ensemble-api#latitude={lat}&longitude={lon}",
+            'api_url': f"https://ensemble-api.open-meteo.com/v1/ensemble?latitude={lat}&longitude={lon}&hourly=temperature_2m",
+            'description': 'ECMWF probabilistic ensemble forecasts',
+            'how_to_verify': 'View forecast uncertainty ranges'
+        },
+        'Open-Elevation API': {
+            'url': f"https://api.open-meteo.com/v1/elevation?latitude={lat}&longitude={lon}",
+            'api_url': f"https://api.open-meteo.com/v1/elevation?latitude={lat}&longitude={lon}",
+            'description': 'Elevation data from ASTER/SRTM DEMs',
+            'how_to_verify': 'Direct API call returns elevation in meters'
+        },
+        'GPM Precipitation': {
+            'url': 'https://gpm.nasa.gov/data/directory',
+            'api_url': f"https://cmr.earthdata.nasa.gov/search/granules.json?short_name=GPM_3IMERGHH&bounding_box={lon-0.5},{lat-0.5},{lon+0.5},{lat+0.5}",
+            'description': 'Global Precipitation Measurement (30-min updates)',
+            'how_to_verify': 'Near real-time precipitation data'
+        },
+        'SMAP Soil Moisture': {
+            'url': 'https://nsidc.org/data/smap/smap-data.html',
+            'api_url': f"https://cmr.earthdata.nasa.gov/search/granules.json?short_name=SPL3SMP&bounding_box={lon-1},{lat-1},{lon+1},{lat+1}",
+            'description': 'Soil moisture and freeze/thaw state',
+            'how_to_verify': 'L-band microwave measurements'
+        },
+        'Landsat Snow Cover': {
+            'url': f"https://earthexplorer.usgs.gov/",
+            'api_url': f"https://cmr.earthdata.nasa.gov/search/granules.json?short_name=LANDSAT_ETM_C2_L2&bounding_box={lon-0.5},{lat-0.5},{lon+0.5},{lat+0.5}",
+            'description': 'High-resolution snow mapping (30m)',
+            'how_to_verify': 'USGS Earth Explorer - search by coordinates'
+        },
+        'Avalanche Regions': {
+            'url': 'https://avalanche.org/',
+            'api_url': None,
+            'description': 'Regional avalanche forecasting centers',
+            'how_to_verify': 'Find your local avalanche center bulletin'
+        },
+    }
+    
+    return links
+
+
+def display_source_verification_section(lat, lon, data_quality=None):
+    """
+    Display a verification section with clickable links to each data source.
+    
+    Args:
+        lat: Latitude of the assessed location
+        lon: Longitude of the assessed location
+        data_quality: Optional dict of source status from fetch_all_satellite_data
+    """
+    links = get_source_verification_links(lat, lon)
+    
+    st.markdown(f"""
+    <div style="background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 12px; 
+                padding: 1rem; margin-bottom: 1rem;">
+        <strong style="color: #0369a1; font-size: 1.1rem;">🔍 Verify Data Sources</strong><br>
+        <span style="font-size: 0.9rem; color: #0c4a6e;">
+            Location: <strong>{lat:.4f}°N, {lon:.4f}°E</strong><br>
+            Click any link below to verify the source data at your exact coordinates.
+        </span>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Group sources by category
+    categories = {
+        '🛰️ Satellite Data': [
+            'Open-Meteo (Real-time)', 'ERA5 Reanalysis', 'NASA Earthdata (MODIS/VIIRS)',
+            'NASA GIBS (Snow Cover)', 'NASA POWER (GOES/CERES)', 'Sentinel (Copernicus)',
+            'NSIDC Snow Products'
+        ],
+        '❄️ Advanced Snow Products': [
+            'SNODAS (US Snow)', 'AMSR2 Microwave SWE', 'MODIS Albedo', 'VIIRS Surface Temp',
+            'Sentinel-1 SAR', 'GlobSnow SWE', 'ICESat-2 Altimetry', 'Copernicus Snow',
+            'GRACE Water Storage'
+        ],
+        '📡 Weather Stations': [
+            'SNOTEL (Western US)', 'MesoWest Stations', 'WMO Official Stations'
+        ],
+        '🔬 Models & Analysis': [
+            'Multi-Model Ensemble', 'ECMWF Ensemble', 'Open-Elevation API', 
+            'GPM Precipitation', 'SMAP Soil Moisture', 'Landsat Snow Cover', 'Avalanche Regions'
+        ]
+    }
+    
+    for category, source_names in categories.items():
+        with st.expander(category, expanded=False):
+            for source_name in source_names:
+                if source_name not in links:
+                    continue
+                    
+                source = links[source_name]
+                url = source.get('url', '#')
+                api_url = source.get('api_url')
+                description = source.get('description', '')
+                how_to_verify = source.get('how_to_verify', '')
+                
+                # Check status if available
+                status_icon = "⚪"
+                status_text = ""
+                if data_quality and source_name in data_quality:
+                    status = data_quality[source_name]
+                    if status == 'success':
+                        status_icon = "🟢"
+                        status_text = "Data retrieved"
+                    elif status == 'partial':
+                        status_icon = "🟡"
+                        status_text = "Partial data"
+                    else:
+                        status_icon = "🔴"
+                        status_text = "No data"
+                
+                # Check coverage if applicable
+                coverage_check = source.get('coverage_check')
+                in_coverage = True
+                if coverage_check:
+                    in_coverage = coverage_check(lat, lon)
+                    if not in_coverage:
+                        status_icon = "⚫"
+                        status_text = "Outside coverage area"
+                
+                api_link_html = ''
+                if api_url:
+                    api_link_html = f'''<a href="{api_url}" target="_blank" style="text-decoration: none;">
+                            <span style="background: #10b981; color: white; padding: 0.25rem 0.75rem; 
+                                        border-radius: 4px; font-size: 0.75rem; display: inline-block;">
+                                📡 Direct API Call
+                            </span>
+                        </a>'''
+                
+                st.markdown(f"""
+                <div style="background: white; border: 1px solid #e2e8f0; border-radius: 8px; 
+                            padding: 0.75rem; margin: 0.5rem 0;">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                        <div style="flex: 1;">
+                            <div style="font-weight: 600; color: #1e293b;">
+                                {status_icon} {source_name}
+                                {f'<span style="font-size: 0.75rem; color: #64748b; margin-left: 0.5rem;">({status_text})</span>' if status_text else ''}
+                            </div>
+                            <div style="font-size: 0.8rem; color: #64748b; margin: 0.25rem 0;">
+                                {description}
+                            </div>
+                            <div style="font-size: 0.75rem; color: #94a3b8; font-style: italic;">
+                                💡 {how_to_verify}
+                            </div>
+                        </div>
+                    </div>
+                    <div style="margin-top: 0.5rem; display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                        <a href="{url}" target="_blank" style="text-decoration: none;">
+                            <span style="background: #3b82f6; color: white; padding: 0.25rem 0.75rem; 
+                                        border-radius: 4px; font-size: 0.75rem; display: inline-block;">
+                                🔗 Open Website
+                            </span>
+                        </a>
+                        {api_link_html}
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+    
+    # Add copy-paste coordinate box
+    st.markdown("---")
+    st.markdown("**📋 Quick Copy - Enter these coordinates on any data source:**")
+    
+    col1, col2, col3 = st.columns([2, 2, 1])
+    with col1:
+        st.code(f"Latitude: {lat:.6f}", language=None)
+    with col2:
+        st.code(f"Longitude: {lon:.6f}", language=None)
+    with col3:
+        st.code(f"{lat:.4f}, {lon:.4f}", language=None)
+    
+    st.caption("Most APIs accept coordinates in decimal degrees format. Use positive values for N/E, negative for S/W.")
+
+
+# ============================================
 # 7-DAY AVALANCHE RISK FORECAST
 # ============================================
 
@@ -6779,6 +7099,26 @@ if analysis_mode == "🗺️ Route Analysis":
             - **Low Risk:** {len(waypoint_risks) - len(high_risk_segments) - len(mod_risk_segments)}
             """)
             
+            # Source Verification Links Section for Route Mode
+            st.markdown("---")
+            st.markdown("### 🔍 Verify Source Data")
+            st.markdown("""
+            <div style="background: #fef3c7; border-left: 4px solid #f59e0b; padding: 0.75rem 1rem; 
+                        border-radius: 0 8px 8px 0; margin: 0.5rem 0; font-size: 0.9rem;">
+                <strong>Want to verify the data?</strong> Click the links below to access each data source 
+                directly. Coordinates shown are for the route midpoint - you can modify them to check any point along your route.
+            </div>
+            """, unsafe_allow_html=True)
+            
+            if route_loc and route_loc.get('latitude', 0) != 0:
+                display_source_verification_section(
+                    route_loc['latitude'], 
+                    route_loc['longitude'],
+                    None  # No data quality tracking for route mode currently
+                )
+            else:
+                st.info("Draw a route to see verification links.")
+            
             st.markdown("---")
             st.caption("⚠️ Route analysis provides estimates based on available data. Always verify conditions on the ground and check local avalanche bulletins.")
 
@@ -7648,6 +7988,31 @@ else:
                                 clean_name = name.replace("(", "").replace(")", "").replace("Western US", "").strip()[:25]
                                 icon = "✓" if status == 'success' else "○"
                                 st.markdown(f"{icon} {clean_name}")
+            
+            # Source Verification Links Section
+            st.markdown("---")
+            st.markdown("### 🔍 Verify Source Data")
+            st.markdown("""
+            <div style="background: #fef3c7; border-left: 4px solid #f59e0b; padding: 0.75rem 1rem; 
+                        border-radius: 0 8px 8px 0; margin: 0.5rem 0; font-size: 0.9rem;">
+                <strong>Want to verify the data?</strong> Click the links below to access each data source 
+                directly with your coordinates pre-filled. Compare the raw values to what this tool reports.
+            </div>
+            """, unsafe_allow_html=True)
+            
+            loc = st.session_state.location
+            if loc and loc.get('latitude') and loc.get('longitude'):
+                data_quality = None
+                if st.session_state.satellite_raw:
+                    data_quality = st.session_state.satellite_raw.get('data_quality', {})
+                
+                display_source_verification_section(
+                    loc['latitude'], 
+                    loc['longitude'],
+                    data_quality
+                )
+            else:
+                st.info("Run an assessment to see verification links for your location.")
             
             st.markdown("---")
             st.caption("⚠️ This tool provides estimates and should not replace professional avalanche forecasts. Always check with local avalanche centers.")
