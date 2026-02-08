@@ -4564,18 +4564,20 @@ def render_data_with_verification(param_name, value, formatted_value, source_nam
 # 7-DAY AVALANCHE RISK FORECAST
 # ============================================
 
-def fetch_7day_forecast(lat, lon, current_snow_depth=0):
+def fetch_7day_forecast(lat, lon, current_snow_depth=0, current_risk_score=None):
     """Fetch 7-day weather forecast data from Open-Meteo for avalanche risk prediction.
     
     Args:
         lat: Latitude
         lon: Longitude  
         current_snow_depth: Current snow depth in meters (from assessment)
+        current_risk_score: ML model's risk score for today (to use for day 1 instead of heuristic)
     """
     forecast_data = {
         'available': False,
         'daily': [],
-        'current_snow_depth': current_snow_depth
+        'current_snow_depth': current_snow_depth,
+        'current_risk_score': current_risk_score
     }
     
     try:
@@ -4644,8 +4646,16 @@ def fetch_7day_forecast(lat, lon, current_snow_depth=0):
                 cumulative_snow_cm += day_snowfall
                 day_data['cumulative_snow_cm'] = cumulative_snow_cm
                 
-                # Calculate risk score for this day, considering snow availability
-                day_data['risk_score'] = calculate_forecast_risk(day_data, cumulative_snow_cm)
+                # For day 1 (today), use the ML model's prediction if available
+                # This ensures the forecast matches the current assessment
+                if i == 0 and current_risk_score is not None:
+                    day_data['risk_score'] = current_risk_score
+                    day_data['risk_source'] = 'ml_model'  # Track that this came from ML
+                else:
+                    # Calculate risk score for future days using heuristic
+                    day_data['risk_score'] = calculate_forecast_risk(day_data, cumulative_snow_cm)
+                    day_data['risk_source'] = 'forecast_heuristic'
+                    
                 day_data['risk_level'] = get_risk_level_from_score(day_data['risk_score'])
                 
                 forecast_data['daily'].append(day_data)
@@ -7086,7 +7096,9 @@ if analysis_mode == "🗺️ Route Analysis":
         # TAB: Forecast
         with rt_tab_forecast:
             if route_loc['latitude'] != 0:
-                forecast = fetch_7day_forecast(route_loc['latitude'], route_loc['longitude'], 0)
+                # For route analysis, use max risk score from route as current risk for day 1
+                route_max_risk = route_analysis.get('route_summary', {}).get('max_risk_score', None)
+                forecast = fetch_7day_forecast(route_loc['latitude'], route_loc['longitude'], 0, route_max_risk)
                 
                 if forecast.get('available') and forecast.get('daily'):
                     chart_result = create_forecast_chart(forecast)
@@ -7697,9 +7709,10 @@ else:
         with tab_forecast:
             forecast_loc = results.get('location', st.session_state.location)
             if forecast_loc:
-                # Pass current snow depth to forecast for accurate risk calculation
+                # Pass current snow depth and ML risk score for accurate risk calculation
                 current_snow_depth = results.get('snow_depth', 0) or 0
-                forecast = fetch_7day_forecast(forecast_loc['latitude'], forecast_loc['longitude'], current_snow_depth)
+                current_ml_risk = results.get('avalanche_probability', None)  # ML model's prediction for today
+                forecast = fetch_7day_forecast(forecast_loc['latitude'], forecast_loc['longitude'], current_snow_depth, current_ml_risk)
                 
                 if forecast.get('available') and forecast.get('daily'):
                     chart_result = create_forecast_chart(forecast)
