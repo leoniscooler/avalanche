@@ -8441,6 +8441,276 @@ else:
                                         st.caption(f"Raw: `{swe}` mm")
                 
                 # ========================================
+                # DATA SOURCE COMPARISON & DISCREPANCY DETECTION
+                # ========================================
+                st.markdown("---")
+                st.markdown("### 🔄 Data Source Comparison")
+                st.markdown("*Comparing overlapping measurements from different sources. Higher-ranked sources are generally more accurate.*")
+                
+                # Collect all measurements by parameter type
+                snow_depth_sources = {}
+                temperature_sources = {}
+                swe_sources = {}
+                
+                # Source accuracy rankings (1 = most accurate for that parameter)
+                # Snow Depth: Ground stations > SNODAS > ERA5 > Open-Meteo
+                # Temperature: Ground stations > Open-Meteo (real-time) > ERA5
+                # SWE: SNOTEL > SNODAS > AMSR2 > GlobSnow > Copernicus
+                
+                snow_accuracy_rank = {
+                    'SNOTEL': 1,
+                    'MesoWest': 2,
+                    'SNODAS': 3,
+                    'ERA5': 4,
+                    'Open-Meteo': 5
+                }
+                
+                temp_accuracy_rank = {
+                    'SNOTEL': 1,
+                    'MesoWest': 2,
+                    'Open-Meteo': 3,
+                    'ERA5': 4
+                }
+                
+                swe_accuracy_rank = {
+                    'SNOTEL': 1,
+                    'SNODAS': 2,
+                    'AMSR2': 3,
+                    'GlobSnow': 4,
+                    'Copernicus': 5
+                }
+                
+                # Collect Open-Meteo data
+                weather = sources.get('Open-Meteo (Real-time)', {})
+                if weather and 'current' in weather:
+                    current = weather.get('current', {})
+                    om_temp = current.get('temperature_2m')
+                    om_snow = current.get('snow_depth')  # in cm
+                    if is_valid_value(om_temp, allow_negative=True):
+                        temperature_sources['Open-Meteo'] = {'value': om_temp, 'unit': '°C', 'rank': temp_accuracy_rank.get('Open-Meteo', 99)}
+                    if is_valid_value(om_snow, allow_negative=False):
+                        snow_depth_sources['Open-Meteo'] = {'value': om_snow, 'unit': 'cm', 'rank': snow_accuracy_rank.get('Open-Meteo', 99)}
+                
+                # Collect ERA5 data
+                era5 = sources.get('ERA5 Reanalysis', {})
+                if era5 and era5.get('available'):
+                    era5_temp = get_valid_from_array(era5.get('temperature_2m', []), allow_negative=True)
+                    era5_snow = get_valid_from_array(era5.get('snow_depth', []), allow_negative=False)  # in meters
+                    if era5_temp is not None:
+                        temperature_sources['ERA5'] = {'value': era5_temp, 'unit': '°C', 'rank': temp_accuracy_rank.get('ERA5', 99)}
+                    if era5_snow is not None:
+                        snow_depth_sources['ERA5'] = {'value': era5_snow * 100, 'unit': 'cm', 'rank': snow_accuracy_rank.get('ERA5', 99)}  # Convert m to cm
+                
+                # Collect SNOTEL data (average of stations)
+                snotel = sources.get('SNOTEL (Western US)', {})
+                if snotel and snotel.get('available') and snotel.get('stations'):
+                    snotel_temps = []
+                    snotel_snows = []
+                    snotel_swes = []
+                    for station in snotel['stations']:
+                        temp_c = station.get('air_temp_c')
+                        snow_in = station.get('snow_depth_in')
+                        swe_in = station.get('swe_in')
+                        if is_valid_value(temp_c, allow_negative=True):
+                            snotel_temps.append(temp_c)
+                        if is_valid_value(snow_in, allow_negative=False):
+                            snotel_snows.append(snow_in * 2.54)  # Convert inches to cm
+                        if is_valid_value(swe_in, allow_negative=False):
+                            snotel_swes.append(swe_in * 25.4)  # Convert inches to mm
+                    if snotel_temps:
+                        temperature_sources['SNOTEL'] = {'value': sum(snotel_temps)/len(snotel_temps), 'unit': '°C', 'rank': temp_accuracy_rank.get('SNOTEL', 99), 'count': len(snotel_temps)}
+                    if snotel_snows:
+                        snow_depth_sources['SNOTEL'] = {'value': sum(snotel_snows)/len(snotel_snows), 'unit': 'cm', 'rank': snow_accuracy_rank.get('SNOTEL', 99), 'count': len(snotel_snows)}
+                    if snotel_swes:
+                        swe_sources['SNOTEL'] = {'value': sum(snotel_swes)/len(snotel_swes), 'unit': 'mm', 'rank': swe_accuracy_rank.get('SNOTEL', 99), 'count': len(snotel_swes)}
+                
+                # Collect SNODAS data
+                snodas = sources.get('SNODAS (US Snow)', {})
+                if snodas and snodas.get('available'):
+                    snodas_snow = snodas.get('snow_depth_m')
+                    snodas_swe = snodas.get('swe_mm')
+                    if is_valid_value(snodas_snow, allow_negative=False):
+                        snow_depth_sources['SNODAS'] = {'value': snodas_snow * 100, 'unit': 'cm', 'rank': snow_accuracy_rank.get('SNODAS', 99)}  # Convert m to cm
+                    if is_valid_value(snodas_swe, allow_negative=False):
+                        swe_sources['SNODAS'] = {'value': snodas_swe, 'unit': 'mm', 'rank': swe_accuracy_rank.get('SNODAS', 99)}
+                
+                # Collect MesoWest data
+                mesowest = sources.get('MesoWest Stations', {})
+                if mesowest and mesowest.get('available') and mesowest.get('stations'):
+                    meso_temps = []
+                    meso_snows = []
+                    for station in mesowest['stations']:
+                        temp = station.get('temperature_c')
+                        snow = station.get('snow_depth_m')
+                        if is_valid_value(temp, allow_negative=True):
+                            meso_temps.append(temp)
+                        if is_valid_value(snow, allow_negative=False):
+                            meso_snows.append(snow * 100)  # Convert m to cm
+                    if meso_temps:
+                        temperature_sources['MesoWest'] = {'value': sum(meso_temps)/len(meso_temps), 'unit': '°C', 'rank': temp_accuracy_rank.get('MesoWest', 99), 'count': len(meso_temps)}
+                    if meso_snows:
+                        snow_depth_sources['MesoWest'] = {'value': sum(meso_snows)/len(meso_snows), 'unit': 'cm', 'rank': snow_accuracy_rank.get('MesoWest', 99), 'count': len(meso_snows)}
+                
+                # Collect AMSR2 SWE
+                amsr2 = sources.get('AMSR2 Microwave SWE', {})
+                if amsr2 and amsr2.get('available'):
+                    amsr2_swe = amsr2.get('swe_mm')
+                    if is_valid_value(amsr2_swe, allow_negative=False):
+                        swe_sources['AMSR2'] = {'value': amsr2_swe, 'unit': 'mm', 'rank': swe_accuracy_rank.get('AMSR2', 99)}
+                
+                # Collect GlobSnow SWE
+                globsnow = sources.get('GlobSnow SWE', {})
+                if globsnow and globsnow.get('available'):
+                    gs_swe = globsnow.get('swe_mm')
+                    if is_valid_value(gs_swe, allow_negative=False) and gs_swe != -1:
+                        swe_sources['GlobSnow'] = {'value': gs_swe, 'unit': 'mm', 'rank': swe_accuracy_rank.get('GlobSnow', 99)}
+                
+                # Collect Copernicus SWE
+                copernicus = sources.get('Copernicus Snow', {})
+                if copernicus and copernicus.get('available'):
+                    cop_swe = copernicus.get('swe_mm')
+                    if is_valid_value(cop_swe, allow_negative=False):
+                        swe_sources['Copernicus'] = {'value': cop_swe, 'unit': 'mm', 'rank': swe_accuracy_rank.get('Copernicus', 99)}
+                
+                # Function to display comparison table with discrepancy detection
+                def display_comparison(param_name, sources_dict, unit, threshold_pct=20):
+                    """Display comparison table for a parameter with discrepancy warnings"""
+                    if len(sources_dict) < 2:
+                        return False  # Nothing to compare
+                    
+                    # Sort by accuracy rank
+                    sorted_sources = sorted(sources_dict.items(), key=lambda x: x[1]['rank'])
+                    best_source = sorted_sources[0][0]
+                    best_value = sorted_sources[0][1]['value']
+                    
+                    # Calculate max discrepancy
+                    values = [s[1]['value'] for s in sorted_sources]
+                    max_val = max(values)
+                    min_val = min(values)
+                    if max_val > 0:
+                        discrepancy_pct = ((max_val - min_val) / max_val) * 100
+                    else:
+                        discrepancy_pct = 0
+                    
+                    # Determine severity
+                    if discrepancy_pct > 50:
+                        severity = "🔴"
+                        severity_text = "Major"
+                        bg_color = "#fef2f2"
+                        border_color = "#ef4444"
+                    elif discrepancy_pct > threshold_pct:
+                        severity = "🟡"
+                        severity_text = "Moderate"
+                        bg_color = "#fefce8"
+                        border_color = "#eab308"
+                    else:
+                        severity = "🟢"
+                        severity_text = "Good"
+                        bg_color = "#f0fdf4"
+                        border_color = "#22c55e"
+                    
+                    # Build comparison table
+                    st.markdown(f"**{param_name}** {severity}")
+                    
+                    table_rows = ""
+                    for source, data in sorted_sources:
+                        rank = data['rank']
+                        value = data['value']
+                        count = data.get('count', '')
+                        count_str = f" (avg of {count})" if count else ""
+                        
+                        # Mark the best/recommended source
+                        if source == best_source:
+                            marker = "✅ **RECOMMENDED**"
+                        else:
+                            marker = ""
+                        
+                        # Calculate difference from best
+                        if best_value != 0:
+                            diff_pct = ((value - best_value) / best_value) * 100
+                            diff_str = f"+{diff_pct:.1f}%" if diff_pct > 0 else f"{diff_pct:.1f}%"
+                        else:
+                            diff_str = "—"
+                        
+                        # Format value with imperial if needed
+                        if use_imperial:
+                            if unit == '°C':
+                                imperial_val = f" ({imperial_temp(value):.1f}°F)"
+                            elif unit == 'cm':
+                                imperial_val = f" ({imperial_length_cm(value):.1f} in)"
+                            elif unit == 'mm':
+                                imperial_val = f" ({imperial_length_mm(value):.2f} in)"
+                            else:
+                                imperial_val = ""
+                        else:
+                            imperial_val = ""
+                        
+                        table_rows += f"| {source}{count_str} | {value:.1f} {unit}{imperial_val} | #{rank} | {diff_str} | {marker} |\n"
+                    
+                    st.markdown(f"""
+| Source | Value | Accuracy Rank | Diff from Best | Status |
+|--------|-------|---------------|----------------|--------|
+{table_rows}
+""")
+                    
+                    # Show discrepancy warning if significant
+                    if discrepancy_pct > threshold_pct:
+                        st.markdown(f"""
+<div style="background: {bg_color}; border: 1px solid {border_color}; border-radius: 6px; 
+            padding: 0.75rem; margin: 0.5rem 0; font-size: 0.85rem;">
+    <strong>{severity} {severity_text} Discrepancy ({discrepancy_pct:.0f}%)</strong><br>
+    Range: {min_val:.1f} - {max_val:.1f} {unit}<br>
+    <em>Recommendation: Use <strong>{best_source}</strong> ({best_value:.1f} {unit}) as it has the highest accuracy ranking for this parameter.
+    Ground-truth stations (SNOTEL, MesoWest) are generally most reliable, followed by high-resolution analysis products (SNODAS), 
+    then reanalysis (ERA5), and finally forecast models (Open-Meteo).</em>
+</div>
+""", unsafe_allow_html=True)
+                    
+                    return True
+                
+                # Display comparisons for each parameter type
+                comparisons_shown = False
+                
+                if len(snow_depth_sources) >= 2:
+                    display_comparison("❄️ Snow Depth", snow_depth_sources, "cm", threshold_pct=20)
+                    comparisons_shown = True
+                    st.markdown("")
+                
+                if len(temperature_sources) >= 2:
+                    display_comparison("🌡️ Temperature", temperature_sources, "°C", threshold_pct=15)
+                    comparisons_shown = True
+                    st.markdown("")
+                
+                if len(swe_sources) >= 2:
+                    display_comparison("💧 Snow Water Equivalent (SWE)", swe_sources, "mm", threshold_pct=25)
+                    comparisons_shown = True
+                
+                if not comparisons_shown:
+                    st.info("ℹ️ Not enough overlapping data sources available for comparison at this location.")
+                
+                # Accuracy explanation
+                with st.expander("ℹ️ Understanding Data Source Accuracy Rankings", expanded=False):
+                    st.markdown("""
+**Why sources have different accuracy:**
+
+| Rank | Source Type | Description | Best For |
+|------|-------------|-------------|----------|
+| 1 | **Ground Stations** (SNOTEL, MesoWest) | Direct physical measurements at specific locations | Point measurements, validation |
+| 2-3 | **High-Res Analysis** (SNODAS) | Combines ground obs + satellite + models at ~1km | Regional snow analysis in US |
+| 4 | **Reanalysis** (ERA5) | Historical data assimilation at ~31km | Long-term trends, consistent data |
+| 5 | **Forecast Models** (Open-Meteo) | Weather prediction models at ~11km | Real-time conditions, forecasting |
+| 6+ | **Passive Microwave** (AMSR2, GlobSnow) | Satellite remote sensing | Large-scale SWE mapping |
+
+**Why discrepancies occur:**
+- **Grid Resolution**: A 31km ERA5 cell averages different terrain than an 11km Open-Meteo cell
+- **Timing**: ERA5 may lag 24-48h behind real-time conditions
+- **Algorithm Differences**: Each product uses different snow models
+- **Terrain Effects**: Mountains cause high spatial variability in snow
+
+**General Rule**: When in doubt, trust ground stations > high-res analysis > reanalysis > forecast models.
+""")
+                
+                # ========================================
                 # SUMMARY: WHAT THE MODEL ACTUALLY USED
                 # ========================================
                 st.markdown("---")
