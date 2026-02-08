@@ -8794,7 +8794,6 @@ else:
                 # Show KNN imputed values in a separate collapsable table
                 knn_info = st.session_state.get('knn_imputation_info', {})
                 knn_imputed = knn_info.get('knn_imputed_values', {})
-                knn_original = knn_info.get('original_values', {})
                 
                 if knn_imputed:
                     with st.expander(f"🔮 KNN Predicted Values ({len(knn_imputed)} features)", expanded=False):
@@ -8812,24 +8811,16 @@ else:
                             knn_df = pd.DataFrame(knn_rows)
                             st.dataframe(knn_df, hide_index=True, use_container_width=True)
                             st.caption(f"💡 {len(knn_imputed)} of {knn_info.get('total_features', 38)} features were imputed from training data patterns.")
-                
-                # Show original values that KNN used as input (non-imputed features)
-                if knn_original:
-                    with st.expander(f"📡 KNN Input Values ({len(knn_original)} features from data sources)", expanded=False):
-                        st.markdown("*These values were available from satellite/API sources and used as input to the KNN imputer to predict missing values:*")
-                        
-                        original_rows = []
-                        for param, value in knn_original.items():
-                            original_rows.append({
-                                'Parameter': param,
-                                'Value': format_value_with_imperial(param, value, use_imperial),
-                                'Source': 'Satellite/API Data'
-                            })
-                        
-                        if original_rows:
-                            original_df = pd.DataFrame(original_rows)
-                            st.dataframe(original_df, hide_index=True, use_container_width=True)
-                            st.caption(f"✅ {len(knn_original)} of {knn_info.get('total_features', 38)} features were available from real data sources.")
+                else:
+                    # Show info about KNN status even if no features were imputed
+                    if knn_info:
+                        features_from_data = knn_info.get('features_from_satellite', 0)
+                        total = knn_info.get('total_features', 38)
+                        with st.expander("🔮 KNN Imputation Status", expanded=False):
+                            st.success(f"✅ All {features_from_data}/{total} features were obtained from satellite/API data. No KNN imputation was needed.")
+                    else:
+                        with st.expander("🔮 KNN Imputation Status", expanded=False):
+                            st.info("ℹ️ KNN imputation info not available. Run a new assessment to see imputation details.")
                 
                 # Coordinate box for manual verification
                 st.markdown("---")
