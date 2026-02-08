@@ -7912,17 +7912,46 @@ else:
                 raw = st.session_state.satellite_raw
                 sources = raw.get('sources', {})
                 
+                # Check if imperial mode is enabled
+                use_imperial = st.session_state.get('use_imperial', False)
+                
+                # Helper functions for imperial conversions
+                def imperial_temp(c):
+                    """Convert Celsius to Fahrenheit"""
+                    return c * 9/5 + 32
+                
+                def imperial_length_cm(cm):
+                    """Convert cm to inches"""
+                    return cm / 2.54
+                
+                def imperial_length_m(m):
+                    """Convert meters to feet"""
+                    return m * 3.28084
+                
+                def imperial_length_mm(mm):
+                    """Convert mm to inches"""
+                    return mm / 25.4
+                
+                def imperial_speed_kmh(kmh):
+                    """Convert km/h to mph"""
+                    return kmh * 0.621371
+                
+                def imperial_speed_ms(ms):
+                    """Convert m/s to mph"""
+                    return ms * 2.23694
+                
                 # Header with location and timestamp
                 data_loc = raw.get('location', {})
                 timestamp = raw.get('timestamp', 'Unknown')
                 
+                unit_note = " (showing imperial conversions)" if use_imperial else ""
                 st.markdown(f"""
                 <div style="background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 8px; 
                             padding: 0.75rem; margin-bottom: 1rem; font-size: 0.85rem;">
                     <strong>📍 Data Location:</strong> {lat:.4f}°N, {lon:.4f}°E<br>
                     <strong>⏱️ Last Updated:</strong> {timestamp[:19] if len(timestamp) > 19 else timestamp}<br>
                     <span style="color: #0369a1; font-size: 0.8rem;">
-                        <strong>🔗 All values below are raw API outputs with verification links</strong>
+                        <strong>🔗 All values below are raw API outputs with verification links{unit_note}</strong>
                     </span>
                 </div>
                 """, unsafe_allow_html=True)
@@ -7953,17 +7982,26 @@ else:
                             temp_val = current.get('temperature_2m')
                             if temp_val is not None:
                                 st.metric("Temperature (°C)", f"{temp_val:.1f}")
-                                st.caption(f"Raw API: `temperature_2m: {temp_val}`")
+                                if use_imperial:
+                                    st.caption(f"Raw API: `temperature_2m: {temp_val}` ({imperial_temp(temp_val):.1f}°F)")
+                                else:
+                                    st.caption(f"Raw API: `temperature_2m: {temp_val}`")
                         with col2:
                             snow_val = current.get('snow_depth')
                             if snow_val is not None:
                                 st.metric("Snow Depth (cm)", f"{snow_val:.1f}")
-                                st.caption(f"Raw API: `snow_depth: {snow_val}`")
+                                if use_imperial:
+                                    st.caption(f"Raw API: `snow_depth: {snow_val}` ({imperial_length_cm(snow_val):.1f} in)")
+                                else:
+                                    st.caption(f"Raw API: `snow_depth: {snow_val}`")
                         with col3:
                             wind_val = current.get('wind_speed_10m')
                             if wind_val is not None:
                                 st.metric("Wind Speed (km/h)", f"{wind_val:.1f}")
-                                st.caption(f"Raw API: `wind_speed_10m: {wind_val}`")
+                                if use_imperial:
+                                    st.caption(f"Raw API: `wind_speed_10m: {wind_val}` ({imperial_speed_kmh(wind_val):.1f} mph)")
+                                else:
+                                    st.caption(f"Raw API: `wind_speed_10m: {wind_val}`")
                         
                         col1, col2, col3 = st.columns(3)
                         with col1:
@@ -7975,7 +8013,10 @@ else:
                             precip_val = current.get('precipitation')
                             if precip_val is not None:
                                 st.metric("Precipitation (mm)", f"{precip_val:.1f}")
-                                st.caption(f"Raw API: `precipitation: {precip_val}`")
+                                if use_imperial:
+                                    st.caption(f"Raw API: `precipitation: {precip_val}` ({imperial_length_mm(precip_val):.2f} in)")
+                                else:
+                                    st.caption(f"Raw API: `precipitation: {precip_val}`")
                         with col3:
                             sw_val = current.get('shortwave_radiation')
                             if sw_val is not None:
@@ -8006,14 +8047,20 @@ else:
                                 latest_temp = temp_arr[-1] if temp_arr else None
                                 if latest_temp is not None:
                                     st.metric("Temperature (°C)", f"{latest_temp:.1f}")
-                                    st.caption(f"Raw API (latest): `{latest_temp}`")
+                                    if use_imperial:
+                                        st.caption(f"Raw API (latest): `{latest_temp}` ({imperial_temp(latest_temp):.1f}°F)")
+                                    else:
+                                        st.caption(f"Raw API (latest): `{latest_temp}`")
                         with col2:
                             if era5.get('snow_depth'):
                                 snow_arr = era5['snow_depth']
                                 latest_snow = snow_arr[-1] if snow_arr else None
                                 if latest_snow is not None:
                                     st.metric("Snow Depth (m)", f"{latest_snow:.3f}")
-                                    st.caption(f"Raw API (latest): `{latest_snow}`")
+                                    if use_imperial:
+                                        st.caption(f"Raw API (latest): `{latest_snow}` ({imperial_length_m(latest_snow):.1f} ft)")
+                                    else:
+                                        st.caption(f"Raw API (latest): `{latest_snow}`")
                         with col3:
                             if era5.get('daily_radiation'):
                                 rad_arr = era5['daily_radiation']
@@ -8045,17 +8092,27 @@ else:
                                 snow_in = station.get('snow_depth_in')
                                 if snow_in is not None:
                                     st.metric("Snow Depth (in)", f"{snow_in:.1f}")
-                                    st.caption(f"Raw: `{snow_in}` in = `{snow_in * 2.54:.1f}` cm")
+                                    # SNOTEL already uses inches, show cm conversion for non-imperial
+                                    if use_imperial:
+                                        st.caption(f"Raw: `{snow_in}` in")
+                                    else:
+                                        st.caption(f"Raw: `{snow_in}` in ({snow_in * 2.54:.1f} cm)")
                             with col2:
                                 swe_in = station.get('swe_in')
                                 if swe_in is not None:
                                     st.metric("SWE (in)", f"{swe_in:.1f}")
-                                    st.caption(f"Raw: `{swe_in}` in = `{swe_in * 25.4:.1f}` mm")
+                                    if use_imperial:
+                                        st.caption(f"Raw: `{swe_in}` in")
+                                    else:
+                                        st.caption(f"Raw: `{swe_in}` in ({swe_in * 25.4:.1f} mm)")
                             with col3:
                                 temp_c = station.get('air_temp_c')
                                 if temp_c is not None:
                                     st.metric("Temperature (°C)", f"{temp_c:.1f}")
-                                    st.caption(f"Raw: `{temp_c}`")
+                                    if use_imperial:
+                                        st.caption(f"Raw: `{temp_c}` ({imperial_temp(temp_c):.1f}°F)")
+                                    else:
+                                        st.caption(f"Raw: `{temp_c}`")
                 
                 # ========================================
                 # SNODAS DATA (US)
@@ -8073,12 +8130,18 @@ else:
                             snow_m = snodas.get('snow_depth_m')
                             if snow_m is not None:
                                 st.metric("Snow Depth (m)", f"{snow_m:.3f}")
-                                st.caption(f"Raw: `{snow_m}` m = `{snow_m * 100:.1f}` cm")
+                                if use_imperial:
+                                    st.caption(f"Raw: `{snow_m}` m ({imperial_length_m(snow_m):.1f} ft / {snow_m * 39.37:.1f} in)")
+                                else:
+                                    st.caption(f"Raw: `{snow_m}` m ({snow_m * 100:.1f} cm)")
                         with col2:
                             swe_mm = snodas.get('swe_mm')
                             if swe_mm is not None:
                                 st.metric("SWE (mm)", f"{swe_mm:.1f}")
-                                st.caption(f"Raw: `{swe_mm}` mm")
+                                if use_imperial:
+                                    st.caption(f"Raw: `{swe_mm}` mm ({imperial_length_mm(swe_mm):.2f} in)")
+                                else:
+                                    st.caption(f"Raw: `{swe_mm}` mm")
                 
                 # ========================================
                 # NASA POWER (GOES/CERES)
@@ -8121,7 +8184,10 @@ else:
                         precip = gpm.get('precipitation_mm')
                         if precip is not None:
                             st.metric("Precipitation (mm)", f"{precip:.1f}")
-                            st.caption(f"Raw: `{precip}` mm")
+                            if use_imperial:
+                                st.caption(f"Raw: `{precip}` mm ({imperial_length_mm(precip):.2f} in)")
+                            else:
+                                st.caption(f"Raw: `{precip}` mm")
                 
                 # ========================================
                 # MESOWEST STATIONS
@@ -8140,17 +8206,26 @@ else:
                                 temp = station.get('temperature_c')
                                 if temp is not None:
                                     st.metric("Temperature (°C)", f"{temp:.1f}")
-                                    st.caption(f"Raw: `{temp}`")
+                                    if use_imperial:
+                                        st.caption(f"Raw: `{temp}` ({imperial_temp(temp):.1f}°F)")
+                                    else:
+                                        st.caption(f"Raw: `{temp}`")
                             with col2:
                                 wind = station.get('wind_speed_ms')
                                 if wind is not None:
                                     st.metric("Wind (m/s)", f"{wind:.1f}")
-                                    st.caption(f"Raw: `{wind}`")
+                                    if use_imperial:
+                                        st.caption(f"Raw: `{wind}` ({imperial_speed_ms(wind):.1f} mph)")
+                                    else:
+                                        st.caption(f"Raw: `{wind}`")
                             with col3:
                                 snow = station.get('snow_depth_m')
                                 if snow is not None:
                                     st.metric("Snow (m)", f"{snow:.2f}")
-                                    st.caption(f"Raw: `{snow}`")
+                                    if use_imperial:
+                                        st.caption(f"Raw: `{snow}` ({imperial_length_m(snow):.1f} ft)")
+                                    else:
+                                        st.caption(f"Raw: `{snow}`")
                 
                 # ========================================
                 # AMSR2 MICROWAVE SWE
