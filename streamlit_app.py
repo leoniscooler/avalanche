@@ -7915,6 +7915,83 @@ else:
                 # Check if imperial mode is enabled
                 use_imperial = st.session_state.get('use_imperial', False)
                 
+                # ========================================
+                # HELPER: Check for valid data (filter NoData/NaN values)
+                # ========================================
+                # Common fill/NoData values used by different data sources:
+                # - NASA POWER: -999
+                # - SNODAS/NSIDC: -9999
+                # - MODIS: -9999, 32767
+                # - ERA5: NaN
+                # - Open-Meteo: null/None
+                # - SNOTEL: -99.9, -999
+                # - GlobSnow: -1 (for invalid)
+                # - GPM: -9999.9
+                import math
+                
+                def is_valid_value(val, allow_zero=True, allow_negative=False):
+                    """
+                    Check if a value is valid (not a NoData/fill value).
+                    
+                    Common NoData indicators:
+                    - None, NaN
+                    - -999, -999.0, -9999, -9999.0, -9999.9
+                    - Values below -900 (catch-all for negative fill values)
+                    - 32767 (MODIS fill value)
+                    
+                    Args:
+                        val: The value to check
+                        allow_zero: Whether 0 is considered valid (True for most params)
+                        allow_negative: Whether negative values are valid (True for temp, False for snow/precip)
+                    """
+                    if val is None:
+                        return False
+                    
+                    # Check for NaN (works for both float('nan') and numpy nan)
+                    try:
+                        if math.isnan(val):
+                            return False
+                    except (TypeError, ValueError):
+                        pass
+                    
+                    # Check for common fill values
+                    fill_values = [-999, -999.0, -9999, -9999.0, -9999.9, 32767, 32767.0]
+                    if val in fill_values:
+                        return False
+                    
+                    # Catch-all for negative fill values (except for temperature which can be negative)
+                    if not allow_negative and val < -900:
+                        return False
+                    
+                    # Check zero handling
+                    if not allow_zero and val == 0:
+                        return False
+                    
+                    return True
+                
+                def get_valid_from_array(arr, allow_negative=False):
+                    """Get the latest valid value from an array, filtering out fill values."""
+                    if not arr:
+                        return None
+                    # Iterate from end to find latest valid value
+                    for val in reversed(arr):
+                        if is_valid_value(val, allow_zero=True, allow_negative=allow_negative):
+                            return val
+                    return None
+                
+                def get_valid_from_dict(d, allow_negative=False):
+                    """Get the latest valid value from a dict (keyed by date), filtering out fill values."""
+                    if not d or not isinstance(d, dict):
+                        return None
+                    values = list(d.values())
+                    return get_valid_from_array(values, allow_negative=allow_negative)
+                
+                def filter_valid_array(arr, allow_negative=False):
+                    """Filter an array to only include valid values."""
+                    if not arr:
+                        return []
+                    return [v for v in arr if is_valid_value(v, allow_zero=True, allow_negative=allow_negative)]
+                
                 # Helper functions for imperial conversions
                 def imperial_temp(c):
                     """Convert Celsius to Fahrenheit"""
@@ -7974,60 +8051,76 @@ else:
                     api_url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current=temperature_2m,relative_humidity_2m,precipitation,snow_depth,weather_code,wind_speed_10m,wind_direction_10m,shortwave_radiation&hourly=temperature_2m,snow_depth"
                     web_url = f"https://open-meteo.com/en/docs#latitude={lat}&longitude={lon}&current=temperature_2m,snow_depth,wind_speed_10m"
                     
-                    with st.expander("🌐 Open-Meteo (Real-time Weather)", expanded=True):
-                        st.markdown(f'<a href="{web_url}" target="_blank">🔗 Open Website</a> | <a href="{api_url}" target="_blank">📡 View Raw API Response</a>', unsafe_allow_html=True)
-                        
-                        col1, col2, col3 = st.columns(3)
-                        with col1:
-                            temp_val = current.get('temperature_2m')
-                            if temp_val is not None:
-                                st.metric("Temperature (°C)", f"{temp_val:.1f}")
-                                if use_imperial:
-                                    st.caption(f"Raw API: `temperature_2m: {temp_val}` ({imperial_temp(temp_val):.1f}°F)")
-                                else:
-                                    st.caption(f"Raw API: `temperature_2m: {temp_val}`")
-                        with col2:
-                            snow_val = current.get('snow_depth')
-                            if snow_val is not None:
-                                st.metric("Snow Depth (cm)", f"{snow_val:.1f}")
-                                if use_imperial:
-                                    st.caption(f"Raw API: `snow_depth: {snow_val}` ({imperial_length_cm(snow_val):.1f} in)")
-                                else:
-                                    st.caption(f"Raw API: `snow_depth: {snow_val}`")
-                        with col3:
-                            wind_val = current.get('wind_speed_10m')
-                            if wind_val is not None:
-                                st.metric("Wind Speed (km/h)", f"{wind_val:.1f}")
-                                if use_imperial:
-                                    st.caption(f"Raw API: `wind_speed_10m: {wind_val}` ({imperial_speed_kmh(wind_val):.1f} mph)")
-                                else:
-                                    st.caption(f"Raw API: `wind_speed_10m: {wind_val}`")
-                        
-                        col1, col2, col3 = st.columns(3)
-                        with col1:
-                            rh_val = current.get('relative_humidity_2m')
-                            if rh_val is not None:
-                                st.metric("Humidity (%)", f"{rh_val:.0f}")
-                                st.caption(f"Raw API: `relative_humidity_2m: {rh_val}`")
-                        with col2:
-                            precip_val = current.get('precipitation')
-                            if precip_val is not None:
-                                st.metric("Precipitation (mm)", f"{precip_val:.1f}")
-                                if use_imperial:
-                                    st.caption(f"Raw API: `precipitation: {precip_val}` ({imperial_length_mm(precip_val):.2f} in)")
-                                else:
-                                    st.caption(f"Raw API: `precipitation: {precip_val}`")
-                        with col3:
-                            sw_val = current.get('shortwave_radiation')
-                            if sw_val is not None:
-                                st.metric("Solar Radiation (W/m²)", f"{sw_val:.0f}")
-                                st.caption(f"Raw API: `shortwave_radiation: {sw_val}`")
-                        
-                        # Show hourly snow depth array if available
-                        if hourly.get('snow_depth'):
-                            snow_arr = hourly['snow_depth']
-                            st.markdown("**Hourly Snow Depth Array (last 24 values):**")
-                            st.code(f"snow_depth: {snow_arr[-24:] if len(snow_arr) >= 24 else snow_arr}")
+                    # Check if any valid data exists
+                    temp_val = current.get('temperature_2m')
+                    snow_val = current.get('snow_depth')
+                    wind_val = current.get('wind_speed_10m')
+                    rh_val = current.get('relative_humidity_2m')
+                    precip_val = current.get('precipitation')
+                    sw_val = current.get('shortwave_radiation')
+                    
+                    # Validate each value (temperature allows negative, others don't)
+                    temp_valid = is_valid_value(temp_val, allow_negative=True)
+                    snow_valid = is_valid_value(snow_val, allow_negative=False)
+                    wind_valid = is_valid_value(wind_val, allow_negative=False)
+                    rh_valid = is_valid_value(rh_val, allow_negative=False)
+                    precip_valid = is_valid_value(precip_val, allow_negative=False)
+                    sw_valid = is_valid_value(sw_val, allow_negative=False)
+                    
+                    # Only show expander if at least one value is valid
+                    has_valid_data = any([temp_valid, snow_valid, wind_valid, rh_valid, precip_valid, sw_valid])
+                    
+                    if has_valid_data:
+                        with st.expander("🌐 Open-Meteo (Real-time Weather)", expanded=True):
+                            st.markdown(f'<a href="{web_url}" target="_blank">🔗 Open Website</a> | <a href="{api_url}" target="_blank">📡 View Raw API Response</a>', unsafe_allow_html=True)
+                            
+                            col1, col2, col3 = st.columns(3)
+                            with col1:
+                                if temp_valid:
+                                    st.metric("Temperature (°C)", f"{temp_val:.1f}")
+                                    if use_imperial:
+                                        st.caption(f"Raw API: `temperature_2m: {temp_val}` ({imperial_temp(temp_val):.1f}°F)")
+                                    else:
+                                        st.caption(f"Raw API: `temperature_2m: {temp_val}`")
+                            with col2:
+                                if snow_valid:
+                                    st.metric("Snow Depth (cm)", f"{snow_val:.1f}")
+                                    if use_imperial:
+                                        st.caption(f"Raw API: `snow_depth: {snow_val}` ({imperial_length_cm(snow_val):.1f} in)")
+                                    else:
+                                        st.caption(f"Raw API: `snow_depth: {snow_val}`")
+                            with col3:
+                                if wind_valid:
+                                    st.metric("Wind Speed (km/h)", f"{wind_val:.1f}")
+                                    if use_imperial:
+                                        st.caption(f"Raw API: `wind_speed_10m: {wind_val}` ({imperial_speed_kmh(wind_val):.1f} mph)")
+                                    else:
+                                        st.caption(f"Raw API: `wind_speed_10m: {wind_val}`")
+                            
+                            col1, col2, col3 = st.columns(3)
+                            with col1:
+                                if rh_valid:
+                                    st.metric("Humidity (%)", f"{rh_val:.0f}")
+                                    st.caption(f"Raw API: `relative_humidity_2m: {rh_val}`")
+                            with col2:
+                                if precip_valid:
+                                    st.metric("Precipitation (mm)", f"{precip_val:.1f}")
+                                    if use_imperial:
+                                        st.caption(f"Raw API: `precipitation: {precip_val}` ({imperial_length_mm(precip_val):.2f} in)")
+                                    else:
+                                        st.caption(f"Raw API: `precipitation: {precip_val}`")
+                            with col3:
+                                if sw_valid:
+                                    st.metric("Solar Radiation (W/m²)", f"{sw_val:.0f}")
+                                    st.caption(f"Raw API: `shortwave_radiation: {sw_val}`")
+                            
+                            # Show hourly snow depth array if available (filter valid values)
+                            if hourly.get('snow_depth'):
+                                snow_arr = hourly['snow_depth']
+                                valid_snow_arr = filter_valid_array(snow_arr[-24:] if len(snow_arr) >= 24 else snow_arr, allow_negative=False)
+                                if valid_snow_arr:
+                                    st.markdown("**Hourly Snow Depth Array (last 24 valid values):**")
+                                    st.code(f"snow_depth: {valid_snow_arr}")
                 
                 # ========================================
                 # ERA5 REANALYSIS DATA
@@ -8037,42 +8130,44 @@ else:
                     api_url = f"https://archive-api.open-meteo.com/v1/era5?latitude={lat}&longitude={lon}&start_date={date_yesterday}&end_date={date_today}&hourly=temperature_2m,snow_depth,shortwave_radiation"
                     web_url = f"https://open-meteo.com/en/docs/historical-weather-api#latitude={lat}&longitude={lon}&start_date={date_yesterday}&end_date={date_today}"
                     
-                    with st.expander("📊 ERA5 Reanalysis (Historical)", expanded=False):
-                        st.markdown(f'<a href="{web_url}" target="_blank">🔗 Open Website</a> | <a href="{api_url}" target="_blank">📡 View Raw API Response</a>', unsafe_allow_html=True)
-                        
-                        col1, col2, col3 = st.columns(3)
-                        with col1:
-                            if era5.get('temperature_2m'):
-                                temp_arr = era5['temperature_2m']
-                                latest_temp = temp_arr[-1] if temp_arr else None
+                    # Get valid values from arrays
+                    latest_temp = get_valid_from_array(era5.get('temperature_2m', []), allow_negative=True)
+                    latest_snow = get_valid_from_array(era5.get('snow_depth', []), allow_negative=False)
+                    latest_rad = get_valid_from_array(era5.get('daily_radiation', []), allow_negative=False)
+                    
+                    # Only show if we have valid data
+                    has_valid_data = any([latest_temp is not None, latest_snow is not None, latest_rad is not None])
+                    
+                    if has_valid_data:
+                        with st.expander("📊 ERA5 Reanalysis (Historical)", expanded=False):
+                            st.markdown(f'<a href="{web_url}" target="_blank">🔗 Open Website</a> | <a href="{api_url}" target="_blank">📡 View Raw API Response</a>', unsafe_allow_html=True)
+                            
+                            col1, col2, col3 = st.columns(3)
+                            with col1:
                                 if latest_temp is not None:
                                     st.metric("Temperature (°C)", f"{latest_temp:.1f}")
                                     if use_imperial:
                                         st.caption(f"Raw API (latest): `{latest_temp}` ({imperial_temp(latest_temp):.1f}°F)")
                                     else:
                                         st.caption(f"Raw API (latest): `{latest_temp}`")
-                        with col2:
-                            if era5.get('snow_depth'):
-                                snow_arr = era5['snow_depth']
-                                latest_snow = snow_arr[-1] if snow_arr else None
+                            with col2:
                                 if latest_snow is not None:
                                     st.metric("Snow Depth (m)", f"{latest_snow:.3f}")
                                     if use_imperial:
                                         st.caption(f"Raw API (latest): `{latest_snow}` ({imperial_length_m(latest_snow):.1f} ft)")
                                     else:
                                         st.caption(f"Raw API (latest): `{latest_snow}`")
-                        with col3:
-                            if era5.get('daily_radiation'):
-                                rad_arr = era5['daily_radiation']
-                                latest_rad = rad_arr[-1] if rad_arr else None
+                            with col3:
                                 if latest_rad is not None:
                                     st.metric("Daily Radiation (W/m²)", f"{latest_rad:.0f}")
                                     st.caption(f"Raw API: `{latest_rad}`")
-                        
-                        if era5.get('snow_depth'):
-                            st.markdown("**Snow Depth Array (last 24 hourly values):**")
-                            snow_arr = era5['snow_depth']
-                            st.code(f"snow_depth: {snow_arr[-24:] if len(snow_arr) >= 24 else snow_arr}")
+                            
+                            # Show valid snow depth array
+                            if era5.get('snow_depth'):
+                                valid_snow_arr = filter_valid_array(era5['snow_depth'][-24:] if len(era5['snow_depth']) >= 24 else era5['snow_depth'], allow_negative=False)
+                                if valid_snow_arr:
+                                    st.markdown("**Snow Depth Array (last 24 valid hourly values):**")
+                                    st.code(f"snow_depth: {valid_snow_arr}")
                 
                 # ========================================
                 # SNOTEL DATA (Western US)
@@ -8082,37 +8177,48 @@ else:
                     web_url = f"https://wcc.sc.egov.usda.gov/nwcc/tabget?state=&report=STAND&format=HTML&lat={lat}&lon={lon}&radius=50"
                     api_url = f"https://wcc.sc.egov.usda.gov/awdbRestApi/services/v1/stations?networkCodes=SNTL&minLatitude={lat-0.5}&maxLatitude={lat+0.5}&minLongitude={lon-0.5}&maxLongitude={lon+0.5}"
                     
-                    with st.expander("🏔️ SNOTEL Stations (Western US)", expanded=False):
-                        st.markdown(f'<a href="{web_url}" target="_blank">🔗 Open Website</a> | <a href="{api_url}" target="_blank">📡 View Raw API Response</a>', unsafe_allow_html=True)
+                    # Filter stations with valid data (SNOTEL uses -99.9 and -999 as fill values)
+                    valid_stations = []
+                    for station in snotel['stations'][:3]:
+                        snow_in = station.get('snow_depth_in')
+                        swe_in = station.get('swe_in')
+                        temp_c = station.get('air_temp_c')
                         
-                        for station in snotel['stations'][:3]:  # Show first 3 stations
-                            st.markdown(f"**Station: {station.get('name', 'Unknown')}** (ID: {station.get('station_id', 'N/A')})")
-                            col1, col2, col3 = st.columns(3)
-                            with col1:
-                                snow_in = station.get('snow_depth_in')
-                                if snow_in is not None:
-                                    st.metric("Snow Depth (in)", f"{snow_in:.1f}")
-                                    # SNOTEL already uses inches, show cm conversion for non-imperial
-                                    if use_imperial:
-                                        st.caption(f"Raw: `{snow_in}` in")
-                                    else:
-                                        st.caption(f"Raw: `{snow_in}` in ({snow_in * 2.54:.1f} cm)")
-                            with col2:
-                                swe_in = station.get('swe_in')
-                                if swe_in is not None:
-                                    st.metric("SWE (in)", f"{swe_in:.1f}")
-                                    if use_imperial:
-                                        st.caption(f"Raw: `{swe_in}` in")
-                                    else:
-                                        st.caption(f"Raw: `{swe_in}` in ({swe_in * 25.4:.1f} mm)")
-                            with col3:
-                                temp_c = station.get('air_temp_c')
-                                if temp_c is not None:
-                                    st.metric("Temperature (°C)", f"{temp_c:.1f}")
-                                    if use_imperial:
-                                        st.caption(f"Raw: `{temp_c}` ({imperial_temp(temp_c):.1f}°F)")
-                                    else:
-                                        st.caption(f"Raw: `{temp_c}`")
+                        snow_valid = is_valid_value(snow_in, allow_negative=False)
+                        swe_valid = is_valid_value(swe_in, allow_negative=False)
+                        temp_valid = is_valid_value(temp_c, allow_negative=True)
+                        
+                        if any([snow_valid, swe_valid, temp_valid]):
+                            valid_stations.append((station, snow_valid, swe_valid, temp_valid, snow_in, swe_in, temp_c))
+                    
+                    if valid_stations:
+                        with st.expander("🏔️ SNOTEL Stations (Western US)", expanded=False):
+                            st.markdown(f'<a href="{web_url}" target="_blank">🔗 Open Website</a> | <a href="{api_url}" target="_blank">📡 View Raw API Response</a>', unsafe_allow_html=True)
+                            
+                            for station, snow_valid, swe_valid, temp_valid, snow_in, swe_in, temp_c in valid_stations:
+                                st.markdown(f"**Station: {station.get('name', 'Unknown')}** (ID: {station.get('station_id', 'N/A')})")
+                                col1, col2, col3 = st.columns(3)
+                                with col1:
+                                    if snow_valid:
+                                        st.metric("Snow Depth (in)", f"{snow_in:.1f}")
+                                        if use_imperial:
+                                            st.caption(f"Raw: `{snow_in}` in")
+                                        else:
+                                            st.caption(f"Raw: `{snow_in}` in ({snow_in * 2.54:.1f} cm)")
+                                with col2:
+                                    if swe_valid:
+                                        st.metric("SWE (in)", f"{swe_in:.1f}")
+                                        if use_imperial:
+                                            st.caption(f"Raw: `{swe_in}` in")
+                                        else:
+                                            st.caption(f"Raw: `{swe_in}` in ({swe_in * 25.4:.1f} mm)")
+                                with col3:
+                                    if temp_valid:
+                                        st.metric("Temperature (°C)", f"{temp_c:.1f}")
+                                        if use_imperial:
+                                            st.caption(f"Raw: `{temp_c}` ({imperial_temp(temp_c):.1f}°F)")
+                                        else:
+                                            st.caption(f"Raw: `{temp_c}`")
                 
                 # ========================================
                 # SNODAS DATA (US)
@@ -8122,26 +8228,31 @@ else:
                     web_url = "https://nsidc.org/data/g02158"
                     api_url = f"https://cmr.earthdata.nasa.gov/search/granules.json?short_name=G02158&bounding_box={lon-0.1},{lat-0.1},{lon+0.1},{lat+0.1}"
                     
-                    with st.expander("🗺️ SNODAS (US Snow Analysis)", expanded=False):
-                        st.markdown(f'<a href="{web_url}" target="_blank">🔗 Open Website</a> | <a href="{api_url}" target="_blank">📡 View Raw API Response</a>', unsafe_allow_html=True)
-                        
-                        col1, col2 = st.columns(2)
-                        with col1:
-                            snow_m = snodas.get('snow_depth_m')
-                            if snow_m is not None:
-                                st.metric("Snow Depth (m)", f"{snow_m:.3f}")
-                                if use_imperial:
-                                    st.caption(f"Raw: `{snow_m}` m ({imperial_length_m(snow_m):.1f} ft / {snow_m * 39.37:.1f} in)")
-                                else:
-                                    st.caption(f"Raw: `{snow_m}` m ({snow_m * 100:.1f} cm)")
-                        with col2:
-                            swe_mm = snodas.get('swe_mm')
-                            if swe_mm is not None:
-                                st.metric("SWE (mm)", f"{swe_mm:.1f}")
-                                if use_imperial:
-                                    st.caption(f"Raw: `{swe_mm}` mm ({imperial_length_mm(swe_mm):.2f} in)")
-                                else:
-                                    st.caption(f"Raw: `{swe_mm}` mm")
+                    # SNODAS uses -9999 as fill value
+                    snow_m = snodas.get('snow_depth_m')
+                    swe_mm = snodas.get('swe_mm')
+                    snow_valid = is_valid_value(snow_m, allow_negative=False)
+                    swe_valid = is_valid_value(swe_mm, allow_negative=False)
+                    
+                    if snow_valid or swe_valid:
+                        with st.expander("🗺️ SNODAS (US Snow Analysis)", expanded=False):
+                            st.markdown(f'<a href="{web_url}" target="_blank">🔗 Open Website</a> | <a href="{api_url}" target="_blank">📡 View Raw API Response</a>', unsafe_allow_html=True)
+                            
+                            col1, col2 = st.columns(2)
+                            with col1:
+                                if snow_valid:
+                                    st.metric("Snow Depth (m)", f"{snow_m:.3f}")
+                                    if use_imperial:
+                                        st.caption(f"Raw: `{snow_m}` m ({imperial_length_m(snow_m):.1f} ft / {snow_m * 39.37:.1f} in)")
+                                    else:
+                                        st.caption(f"Raw: `{snow_m}` m ({snow_m * 100:.1f} cm)")
+                            with col2:
+                                if swe_valid:
+                                    st.metric("SWE (mm)", f"{swe_mm:.1f}")
+                                    if use_imperial:
+                                        st.caption(f"Raw: `{swe_mm}` mm ({imperial_length_mm(swe_mm):.2f} in)")
+                                    else:
+                                        st.caption(f"Raw: `{swe_mm}` mm")
                 
                 # ========================================
                 # NASA POWER (GOES/CERES)
@@ -8151,24 +8262,27 @@ else:
                     api_url = f"https://power.larc.nasa.gov/api/temporal/daily/point?parameters=ALLSKY_SFC_SW_DWN,ALLSKY_SFC_LW_DWN&community=RE&longitude={lon}&latitude={lat}&start=20240101&end={date_today.replace('-', '')}&format=JSON"
                     web_url = "https://power.larc.nasa.gov/data-access-viewer/"
                     
-                    with st.expander("☀️ NASA POWER (Radiation Data)", expanded=False):
-                        st.markdown(f'<a href="{web_url}" target="_blank">🔗 Open Website</a> | <a href="{api_url}" target="_blank">📡 View Raw API Response</a>', unsafe_allow_html=True)
-                        
-                        col1, col2 = st.columns(2)
-                        with col1:
-                            sw_rad = goes.get('shortwave_radiation')
-                            if sw_rad and isinstance(sw_rad, dict):
-                                latest_val = list(sw_rad.values())[-1] if sw_rad else None
-                                if latest_val:
-                                    st.metric("Shortwave (MJ/m²/day)", f"{latest_val:.2f}")
-                                    st.caption(f"Raw: `{latest_val}`")
-                        with col2:
-                            lw_rad = goes.get('longwave_radiation')
-                            if lw_rad and isinstance(lw_rad, dict):
-                                latest_val = list(lw_rad.values())[-1] if lw_rad else None
-                                if latest_val:
-                                    st.metric("Longwave (MJ/m²/day)", f"{latest_val:.2f}")
-                                    st.caption(f"Raw: `{latest_val}`")
+                    # NASA POWER uses -999 as fill value
+                    sw_rad = goes.get('shortwave_radiation')
+                    lw_rad = goes.get('longwave_radiation')
+                    
+                    # Get valid values from dict (filters out -999)
+                    sw_val = get_valid_from_dict(sw_rad, allow_negative=False) if sw_rad else None
+                    lw_val = get_valid_from_dict(lw_rad, allow_negative=False) if lw_rad else None
+                    
+                    if sw_val is not None or lw_val is not None:
+                        with st.expander("☀️ NASA POWER (Radiation Data)", expanded=False):
+                            st.markdown(f'<a href="{web_url}" target="_blank">🔗 Open Website</a> | <a href="{api_url}" target="_blank">📡 View Raw API Response</a>', unsafe_allow_html=True)
+                            
+                            col1, col2 = st.columns(2)
+                            with col1:
+                                if sw_val is not None:
+                                    st.metric("Shortwave (MJ/m²/day)", f"{sw_val:.2f}")
+                                    st.caption(f"Raw: `{sw_val}`")
+                            with col2:
+                                if lw_val is not None:
+                                    st.metric("Longwave (MJ/m²/day)", f"{lw_val:.2f}")
+                                    st.caption(f"Raw: `{lw_val}`")
                 
                 # ========================================
                 # GPM PRECIPITATION
@@ -8178,11 +8292,14 @@ else:
                     api_url = f"https://cmr.earthdata.nasa.gov/search/granules.json?short_name=GPM_3IMERGHH&bounding_box={lon-0.5},{lat-0.5},{lon+0.5},{lat+0.5}"
                     web_url = "https://gpm.nasa.gov/data/directory"
                     
-                    with st.expander("🌧️ GPM Satellite Precipitation", expanded=False):
-                        st.markdown(f'<a href="{web_url}" target="_blank">🔗 Open Website</a> | <a href="{api_url}" target="_blank">📡 View Raw API Response</a>', unsafe_allow_html=True)
-                        
-                        precip = gpm.get('precipitation_mm')
-                        if precip is not None:
+                    # GPM uses -9999.9 as fill value
+                    precip = gpm.get('precipitation_mm')
+                    precip_valid = is_valid_value(precip, allow_negative=False)
+                    
+                    if precip_valid:
+                        with st.expander("🌧️ GPM Satellite Precipitation", expanded=False):
+                            st.markdown(f'<a href="{web_url}" target="_blank">🔗 Open Website</a> | <a href="{api_url}" target="_blank">📡 View Raw API Response</a>', unsafe_allow_html=True)
+                            
                             st.metric("Precipitation (mm)", f"{precip:.1f}")
                             if use_imperial:
                                 st.caption(f"Raw: `{precip}` mm ({imperial_length_mm(precip):.2f} in)")
@@ -8196,36 +8313,48 @@ else:
                 if mesowest and mesowest.get('available') and mesowest.get('stations'):
                     web_url = f"https://mesowest.utah.edu/cgi-bin/droman/meso_base_dyn.cgi?lat={lat}&lon={lon}&radius=50"
                     
-                    with st.expander("📡 MesoWest Regional Stations", expanded=False):
-                        st.markdown(f'<a href="{web_url}" target="_blank">🔗 Open Website</a>', unsafe_allow_html=True)
+                    # Filter stations with valid data
+                    valid_stations = []
+                    for station in mesowest['stations'][:3]:
+                        temp = station.get('temperature_c')
+                        wind = station.get('wind_speed_ms')
+                        snow = station.get('snow_depth_m')
                         
-                        for station in mesowest['stations'][:3]:
-                            st.markdown(f"**Station: {station.get('name', 'Unknown')}**")
-                            col1, col2, col3 = st.columns(3)
-                            with col1:
-                                temp = station.get('temperature_c')
-                                if temp is not None:
-                                    st.metric("Temperature (°C)", f"{temp:.1f}")
-                                    if use_imperial:
-                                        st.caption(f"Raw: `{temp}` ({imperial_temp(temp):.1f}°F)")
-                                    else:
-                                        st.caption(f"Raw: `{temp}`")
-                            with col2:
-                                wind = station.get('wind_speed_ms')
-                                if wind is not None:
-                                    st.metric("Wind (m/s)", f"{wind:.1f}")
-                                    if use_imperial:
-                                        st.caption(f"Raw: `{wind}` ({imperial_speed_ms(wind):.1f} mph)")
-                                    else:
-                                        st.caption(f"Raw: `{wind}`")
-                            with col3:
-                                snow = station.get('snow_depth_m')
-                                if snow is not None:
-                                    st.metric("Snow (m)", f"{snow:.2f}")
-                                    if use_imperial:
-                                        st.caption(f"Raw: `{snow}` ({imperial_length_m(snow):.1f} ft)")
-                                    else:
-                                        st.caption(f"Raw: `{snow}`")
+                        temp_valid = is_valid_value(temp, allow_negative=True)
+                        wind_valid = is_valid_value(wind, allow_negative=False)
+                        snow_valid = is_valid_value(snow, allow_negative=False)
+                        
+                        if any([temp_valid, wind_valid, snow_valid]):
+                            valid_stations.append((station, temp_valid, wind_valid, snow_valid, temp, wind, snow))
+                    
+                    if valid_stations:
+                        with st.expander("📡 MesoWest Regional Stations", expanded=False):
+                            st.markdown(f'<a href="{web_url}" target="_blank">🔗 Open Website</a>', unsafe_allow_html=True)
+                            
+                            for station, temp_valid, wind_valid, snow_valid, temp, wind, snow in valid_stations:
+                                st.markdown(f"**Station: {station.get('name', 'Unknown')}**")
+                                col1, col2, col3 = st.columns(3)
+                                with col1:
+                                    if temp_valid:
+                                        st.metric("Temperature (°C)", f"{temp:.1f}")
+                                        if use_imperial:
+                                            st.caption(f"Raw: `{temp}` ({imperial_temp(temp):.1f}°F)")
+                                        else:
+                                            st.caption(f"Raw: `{temp}`")
+                                with col2:
+                                    if wind_valid:
+                                        st.metric("Wind (m/s)", f"{wind:.1f}")
+                                        if use_imperial:
+                                            st.caption(f"Raw: `{wind}` ({imperial_speed_ms(wind):.1f} mph)")
+                                        else:
+                                            st.caption(f"Raw: `{wind}`")
+                                with col3:
+                                    if snow_valid:
+                                        st.metric("Snow (m)", f"{snow:.2f}")
+                                        if use_imperial:
+                                            st.caption(f"Raw: `{snow}` ({imperial_length_m(snow):.1f} ft)")
+                                        else:
+                                            st.caption(f"Raw: `{snow}`")
                 
                 # ========================================
                 # AMSR2 MICROWAVE SWE
@@ -8235,11 +8364,14 @@ else:
                     api_url = f"https://cmr.earthdata.nasa.gov/search/granules.json?short_name=AU_DySno&bounding_box={lon-1},{lat-1},{lon+1},{lat+1}"
                     web_url = "https://nsidc.org/data/au_dysno"
                     
-                    with st.expander("📡 AMSR2 Microwave SWE", expanded=False):
-                        st.markdown(f'<a href="{web_url}" target="_blank">🔗 Open Website</a> | <a href="{api_url}" target="_blank">📡 View Raw API Response</a>', unsafe_allow_html=True)
-                        
-                        swe = amsr2.get('swe_mm')
-                        if swe is not None:
+                    # AMSR2 uses various fill values
+                    swe = amsr2.get('swe_mm')
+                    swe_valid = is_valid_value(swe, allow_negative=False)
+                    
+                    if swe_valid:
+                        with st.expander("📡 AMSR2 Microwave SWE", expanded=False):
+                            st.markdown(f'<a href="{web_url}" target="_blank">🔗 Open Website</a> | <a href="{api_url}" target="_blank">📡 View Raw API Response</a>', unsafe_allow_html=True)
+                            
                             st.metric("SWE (mm)", f"{swe:.1f}")
                             if use_imperial:
                                 st.caption(f"Raw: `{swe}` mm ({imperial_length_mm(swe):.2f} in)")
@@ -8253,11 +8385,14 @@ else:
                 if globsnow and globsnow.get('available'):
                     web_url = "https://www.globsnow.info/"
                     
-                    with st.expander("🌍 GlobSnow SWE (Northern Hemisphere)", expanded=False):
-                        st.markdown(f'<a href="{web_url}" target="_blank">🔗 Open Website</a>', unsafe_allow_html=True)
-                        
-                        swe = globsnow.get('swe_mm')
-                        if swe is not None:
+                    # GlobSnow uses -1 as invalid indicator
+                    swe = globsnow.get('swe_mm')
+                    swe_valid = is_valid_value(swe, allow_negative=False) and swe != -1
+                    
+                    if swe_valid:
+                        with st.expander("🌍 GlobSnow SWE (Northern Hemisphere)", expanded=False):
+                            st.markdown(f'<a href="{web_url}" target="_blank">🔗 Open Website</a>', unsafe_allow_html=True)
+                            
                             st.metric("SWE (mm)", f"{swe:.1f}")
                             if use_imperial:
                                 st.caption(f"Raw: `{swe}` mm ({imperial_length_mm(swe):.2f} in)")
@@ -8271,23 +8406,29 @@ else:
                 if copernicus and copernicus.get('available'):
                     web_url = "https://land.copernicus.eu/global/products/snow"
                     
-                    with st.expander("🇪🇺 Copernicus Snow Products", expanded=False):
-                        st.markdown(f'<a href="{web_url}" target="_blank">🔗 Open Website</a>', unsafe_allow_html=True)
-                        
-                        col1, col2 = st.columns(2)
-                        with col1:
-                            fsc = copernicus.get('fractional_snow_cover')
-                            if fsc is not None:
-                                st.metric("Snow Cover (%)", f"{fsc:.0f}")
-                                st.caption(f"Raw: `{fsc}`")
-                        with col2:
-                            swe = copernicus.get('swe_mm')
-                            if swe is not None:
-                                st.metric("SWE (mm)", f"{swe:.1f}")
-                                if use_imperial:
-                                    st.caption(f"Raw: `{swe}` mm ({imperial_length_mm(swe):.2f} in)")
-                                else:
-                                    st.caption(f"Raw: `{swe}` mm")
+                    # Copernicus uses various fill values
+                    fsc = copernicus.get('fractional_snow_cover')
+                    swe = copernicus.get('swe_mm')
+                    
+                    fsc_valid = is_valid_value(fsc, allow_negative=False)
+                    swe_valid = is_valid_value(swe, allow_negative=False)
+                    
+                    if fsc_valid or swe_valid:
+                        with st.expander("🇪🇺 Copernicus Snow Products", expanded=False):
+                            st.markdown(f'<a href="{web_url}" target="_blank">🔗 Open Website</a>', unsafe_allow_html=True)
+                            
+                            col1, col2 = st.columns(2)
+                            with col1:
+                                if fsc_valid:
+                                    st.metric("Snow Cover (%)", f"{fsc:.0f}")
+                                    st.caption(f"Raw: `{fsc}`")
+                            with col2:
+                                if swe_valid:
+                                    st.metric("SWE (mm)", f"{swe:.1f}")
+                                    if use_imperial:
+                                        st.caption(f"Raw: `{swe}` mm ({imperial_length_mm(swe):.2f} in)")
+                                    else:
+                                        st.caption(f"Raw: `{swe}` mm")
                 
                 # ========================================
                 # SUMMARY: WHAT THE MODEL ACTUALLY USED
