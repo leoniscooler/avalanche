@@ -8159,8 +8159,8 @@ else:
                                         st.caption(f"Raw API (latest): `{latest_snow}`")
                             with col3:
                                 if latest_rad is not None:
-                                    st.metric("Daily Radiation (W/m²)", f"{latest_rad:.0f}")
-                                    st.caption(f"Raw API: `{latest_rad}`")
+                                    st.metric("Daily Radiation (MJ/m²)", f"{latest_rad:.1f}")
+                                    st.caption(f"Raw API: `shortwave_radiation_sum: {latest_rad}`")
                             
                             # Show valid snow depth array
                             if era5.get('snow_depth'):
