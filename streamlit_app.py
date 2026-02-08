@@ -8127,7 +8127,7 @@ else:
                 # ========================================
                 era5 = sources.get('ERA5 Reanalysis', {})
                 if era5 and era5.get('available'):
-                    api_url = f"https://archive-api.open-meteo.com/v1/era5?latitude={lat}&longitude={lon}&start_date={date_yesterday}&end_date={date_today}&hourly=temperature_2m,snow_depth,shortwave_radiation"
+                    api_url = f"https://archive-api.open-meteo.com/v1/era5?latitude={lat}&longitude={lon}&start_date={date_yesterday}&end_date={date_today}&hourly=temperature_2m,snow_depth,shortwave_radiation&daily=shortwave_radiation_sum"
                     web_url = f"https://open-meteo.com/en/docs/historical-weather-api#latitude={lat}&longitude={lon}&start_date={date_yesterday}&end_date={date_today}"
                     
                     # Get valid values from arrays
@@ -8159,7 +8159,7 @@ else:
                                         st.caption(f"Raw API (latest): `{latest_snow}`")
                             with col3:
                                 if latest_rad is not None:
-                                    st.metric("Daily Radiation (MJ/m²)", f"{latest_rad:.1f}")
+                                    st.metric("Daily Radiation Sum (MJ/m²)", f"{latest_rad:.1f}")
                                     st.caption(f"Raw API: `shortwave_radiation_sum: {latest_rad}`")
                             
                             # Show valid snow depth array
@@ -8168,6 +8168,16 @@ else:
                                 if valid_snow_arr:
                                     st.markdown("**Snow Depth Array (last 24 valid hourly values):**")
                                     st.code(f"snow_depth: {valid_snow_arr}")
+                            
+                            # Show hourly radiation values that make up the daily sum
+                            if era5.get('shortwave_radiation') and latest_rad is not None:
+                                hourly_rad = era5['shortwave_radiation']
+                                valid_hourly_rad = filter_valid_array(hourly_rad[-24:] if len(hourly_rad) >= 24 else hourly_rad, allow_negative=False)
+                                if valid_hourly_rad:
+                                    st.markdown("**Hourly Shortwave Radiation (W/m²) - components of daily sum:**")
+                                    st.code(f"shortwave_radiation: {valid_hourly_rad}")
+                                    # Show the calculation explanation
+                                    st.caption(f"*Daily sum ({latest_rad:.1f} MJ/m²) = hourly values (W/m²) converted and summed over 24h*")
                 
                 # ========================================
                 # SNOTEL DATA (Western US)
