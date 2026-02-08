@@ -7902,38 +7902,315 @@ else:
             else:
                 st.info("Wind data not available for this location")
         
-        # TAB 3: Current Conditions
+        # TAB 3: Current Conditions - RAW API DATA WITH VERIFICATION LINKS
         with tab_conditions:
-            if st.session_state.env_data:
+            if st.session_state.env_data and st.session_state.satellite_raw:
                 env = st.session_state.env_data
                 loc = st.session_state.location
                 lat = loc.get('latitude', 0) if loc else 0
                 lon = loc.get('longitude', 0) if loc else 0
+                raw = st.session_state.satellite_raw
+                sources = raw.get('sources', {})
                 
-                # Show data verification info
-                if st.session_state.satellite_raw:
-                    raw = st.session_state.satellite_raw
-                    data_loc = raw.get('location', {})
-                    timestamp = raw.get('timestamp', 'Unknown')
+                # Header with location and timestamp
+                data_loc = raw.get('location', {})
+                timestamp = raw.get('timestamp', 'Unknown')
+                
+                st.markdown(f"""
+                <div style="background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 8px; 
+                            padding: 0.75rem; margin-bottom: 1rem; font-size: 0.85rem;">
+                    <strong>📍 Data Location:</strong> {lat:.4f}°N, {lon:.4f}°E<br>
+                    <strong>⏱️ Last Updated:</strong> {timestamp[:19] if len(timestamp) > 19 else timestamp}<br>
+                    <span style="color: #0369a1; font-size: 0.8rem;">
+                        <strong>🔗 All values below are raw API outputs with verification links</strong>
+                    </span>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                # Get date strings for API URLs
+                date_today = datetime.now().strftime('%Y-%m-%d')
+                date_yesterday = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
+                
+                st.markdown("### 🛰️ Raw Satellite & API Data (Model Inputs)")
+                st.markdown("*Only showing data fetched directly from external sources - not calculated values*")
+                
+                # ========================================
+                # OPEN-METEO DATA
+                # ========================================
+                weather = sources.get('Open-Meteo (Real-time)', {})
+                if weather and 'current' in weather:
+                    current = weather.get('current', {})
+                    hourly = weather.get('hourly', {})
                     
-                    # Check if Open-Meteo returned different coords
-                    weather_data = raw.get('sources', {}).get('Open-Meteo (Real-time)', {})
-                    coord_note = ""
-                    if weather_data and '_actual_coords' in weather_data:
-                        actual = weather_data['_actual_coords']
-                        requested = weather_data['_requested_coords']
-                        offset_km = weather_data.get('_coord_offset_km', 0)
-                        if offset_km > 0.5:
-                            coord_note = f"<br><span style='color: #f59e0b;'>⚠️ API grid offset: ~{offset_km:.1f}km from exact point</span>"
+                    api_url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current=temperature_2m,relative_humidity_2m,precipitation,snow_depth,weather_code,wind_speed_10m,wind_direction_10m,shortwave_radiation&hourly=temperature_2m,snow_depth"
+                    web_url = f"https://open-meteo.com/en/docs#latitude={lat}&longitude={lon}&current=temperature_2m,snow_depth,wind_speed_10m"
                     
-                    st.markdown(f"""
-                    <div style="background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 8px; 
-                                padding: 0.75rem; margin-bottom: 1rem; font-size: 0.85rem;">
-                        <strong>📍 Data Location:</strong> {data_loc.get('lat', 0):.4f}°N, {data_loc.get('lon', 0):.4f}°E<br>
-                        <strong>⏱️ Last Updated:</strong> {timestamp[:19] if len(timestamp) > 19 else timestamp}{coord_note}<br>
-                        <span style="color: #0369a1; font-size: 0.8rem;">🔗 Click "Verify" links below to check raw data from each source</span>
-                    </div>
-                    """, unsafe_allow_html=True)
+                    with st.expander("🌐 Open-Meteo (Real-time Weather)", expanded=True):
+                        st.markdown(f'<a href="{web_url}" target="_blank">🔗 Open Website</a> | <a href="{api_url}" target="_blank">📡 View Raw API Response</a>', unsafe_allow_html=True)
+                        
+                        col1, col2, col3 = st.columns(3)
+                        with col1:
+                            temp_val = current.get('temperature_2m')
+                            if temp_val is not None:
+                                st.metric("Temperature (°C)", f"{temp_val:.1f}")
+                                st.caption(f"Raw API: `temperature_2m: {temp_val}`")
+                        with col2:
+                            snow_val = current.get('snow_depth')
+                            if snow_val is not None:
+                                st.metric("Snow Depth (cm)", f"{snow_val:.1f}")
+                                st.caption(f"Raw API: `snow_depth: {snow_val}`")
+                        with col3:
+                            wind_val = current.get('wind_speed_10m')
+                            if wind_val is not None:
+                                st.metric("Wind Speed (km/h)", f"{wind_val:.1f}")
+                                st.caption(f"Raw API: `wind_speed_10m: {wind_val}`")
+                        
+                        col1, col2, col3 = st.columns(3)
+                        with col1:
+                            rh_val = current.get('relative_humidity_2m')
+                            if rh_val is not None:
+                                st.metric("Humidity (%)", f"{rh_val:.0f}")
+                                st.caption(f"Raw API: `relative_humidity_2m: {rh_val}`")
+                        with col2:
+                            precip_val = current.get('precipitation')
+                            if precip_val is not None:
+                                st.metric("Precipitation (mm)", f"{precip_val:.1f}")
+                                st.caption(f"Raw API: `precipitation: {precip_val}`")
+                        with col3:
+                            sw_val = current.get('shortwave_radiation')
+                            if sw_val is not None:
+                                st.metric("Solar Radiation (W/m²)", f"{sw_val:.0f}")
+                                st.caption(f"Raw API: `shortwave_radiation: {sw_val}`")
+                        
+                        # Show hourly snow depth array if available
+                        if hourly.get('snow_depth'):
+                            snow_arr = hourly['snow_depth']
+                            st.markdown("**Hourly Snow Depth Array (last 24 values):**")
+                            st.code(f"snow_depth: {snow_arr[-24:] if len(snow_arr) >= 24 else snow_arr}")
+                
+                # ========================================
+                # ERA5 REANALYSIS DATA
+                # ========================================
+                era5 = sources.get('ERA5 Reanalysis', {})
+                if era5 and era5.get('available'):
+                    api_url = f"https://archive-api.open-meteo.com/v1/era5?latitude={lat}&longitude={lon}&start_date={date_yesterday}&end_date={date_today}&hourly=temperature_2m,snow_depth,shortwave_radiation"
+                    web_url = f"https://open-meteo.com/en/docs/historical-weather-api#latitude={lat}&longitude={lon}&start_date={date_yesterday}&end_date={date_today}"
+                    
+                    with st.expander("📊 ERA5 Reanalysis (Historical)", expanded=False):
+                        st.markdown(f'<a href="{web_url}" target="_blank">🔗 Open Website</a> | <a href="{api_url}" target="_blank">📡 View Raw API Response</a>', unsafe_allow_html=True)
+                        
+                        col1, col2, col3 = st.columns(3)
+                        with col1:
+                            if era5.get('temperature_2m'):
+                                temp_arr = era5['temperature_2m']
+                                latest_temp = temp_arr[-1] if temp_arr else None
+                                if latest_temp is not None:
+                                    st.metric("Temperature (°C)", f"{latest_temp:.1f}")
+                                    st.caption(f"Raw API (latest): `{latest_temp}`")
+                        with col2:
+                            if era5.get('snow_depth'):
+                                snow_arr = era5['snow_depth']
+                                latest_snow = snow_arr[-1] if snow_arr else None
+                                if latest_snow is not None:
+                                    st.metric("Snow Depth (m)", f"{latest_snow:.3f}")
+                                    st.caption(f"Raw API (latest): `{latest_snow}`")
+                        with col3:
+                            if era5.get('daily_radiation'):
+                                rad_arr = era5['daily_radiation']
+                                latest_rad = rad_arr[-1] if rad_arr else None
+                                if latest_rad is not None:
+                                    st.metric("Daily Radiation (W/m²)", f"{latest_rad:.0f}")
+                                    st.caption(f"Raw API: `{latest_rad}`")
+                        
+                        if era5.get('snow_depth'):
+                            st.markdown("**Snow Depth Array (last 24 hourly values):**")
+                            snow_arr = era5['snow_depth']
+                            st.code(f"snow_depth: {snow_arr[-24:] if len(snow_arr) >= 24 else snow_arr}")
+                
+                # ========================================
+                # SNOTEL DATA (Western US)
+                # ========================================
+                snotel = sources.get('SNOTEL (Western US)', {})
+                if snotel and snotel.get('available') and snotel.get('stations'):
+                    web_url = f"https://wcc.sc.egov.usda.gov/nwcc/tabget?state=&report=STAND&format=HTML&lat={lat}&lon={lon}&radius=50"
+                    api_url = f"https://wcc.sc.egov.usda.gov/awdbRestApi/services/v1/stations?networkCodes=SNTL&minLatitude={lat-0.5}&maxLatitude={lat+0.5}&minLongitude={lon-0.5}&maxLongitude={lon+0.5}"
+                    
+                    with st.expander("🏔️ SNOTEL Stations (Western US)", expanded=False):
+                        st.markdown(f'<a href="{web_url}" target="_blank">🔗 Open Website</a> | <a href="{api_url}" target="_blank">📡 View Raw API Response</a>', unsafe_allow_html=True)
+                        
+                        for station in snotel['stations'][:3]:  # Show first 3 stations
+                            st.markdown(f"**Station: {station.get('name', 'Unknown')}** (ID: {station.get('station_id', 'N/A')})")
+                            col1, col2, col3 = st.columns(3)
+                            with col1:
+                                snow_in = station.get('snow_depth_in')
+                                if snow_in is not None:
+                                    st.metric("Snow Depth (in)", f"{snow_in:.1f}")
+                                    st.caption(f"Raw: `{snow_in}` in = `{snow_in * 2.54:.1f}` cm")
+                            with col2:
+                                swe_in = station.get('swe_in')
+                                if swe_in is not None:
+                                    st.metric("SWE (in)", f"{swe_in:.1f}")
+                                    st.caption(f"Raw: `{swe_in}` in = `{swe_in * 25.4:.1f}` mm")
+                            with col3:
+                                temp_c = station.get('air_temp_c')
+                                if temp_c is not None:
+                                    st.metric("Temperature (°C)", f"{temp_c:.1f}")
+                                    st.caption(f"Raw: `{temp_c}`")
+                
+                # ========================================
+                # SNODAS DATA (US)
+                # ========================================
+                snodas = sources.get('SNODAS (US Snow)', {})
+                if snodas and snodas.get('available'):
+                    web_url = "https://nsidc.org/data/g02158"
+                    api_url = f"https://cmr.earthdata.nasa.gov/search/granules.json?short_name=G02158&bounding_box={lon-0.1},{lat-0.1},{lon+0.1},{lat+0.1}"
+                    
+                    with st.expander("🗺️ SNODAS (US Snow Analysis)", expanded=False):
+                        st.markdown(f'<a href="{web_url}" target="_blank">🔗 Open Website</a> | <a href="{api_url}" target="_blank">📡 View Raw API Response</a>', unsafe_allow_html=True)
+                        
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            snow_m = snodas.get('snow_depth_m')
+                            if snow_m is not None:
+                                st.metric("Snow Depth (m)", f"{snow_m:.3f}")
+                                st.caption(f"Raw: `{snow_m}` m = `{snow_m * 100:.1f}` cm")
+                        with col2:
+                            swe_mm = snodas.get('swe_mm')
+                            if swe_mm is not None:
+                                st.metric("SWE (mm)", f"{swe_mm:.1f}")
+                                st.caption(f"Raw: `{swe_mm}` mm")
+                
+                # ========================================
+                # NASA POWER (GOES/CERES)
+                # ========================================
+                goes = sources.get('NASA POWER (GOES/CERES)', {})
+                if goes and goes.get('available'):
+                    api_url = f"https://power.larc.nasa.gov/api/temporal/daily/point?parameters=ALLSKY_SFC_SW_DWN,ALLSKY_SFC_LW_DWN&community=RE&longitude={lon}&latitude={lat}&start=20240101&end={date_today.replace('-', '')}&format=JSON"
+                    web_url = "https://power.larc.nasa.gov/data-access-viewer/"
+                    
+                    with st.expander("☀️ NASA POWER (Radiation Data)", expanded=False):
+                        st.markdown(f'<a href="{web_url}" target="_blank">🔗 Open Website</a> | <a href="{api_url}" target="_blank">📡 View Raw API Response</a>', unsafe_allow_html=True)
+                        
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            sw_rad = goes.get('shortwave_radiation')
+                            if sw_rad and isinstance(sw_rad, dict):
+                                latest_val = list(sw_rad.values())[-1] if sw_rad else None
+                                if latest_val:
+                                    st.metric("Shortwave (MJ/m²/day)", f"{latest_val:.2f}")
+                                    st.caption(f"Raw: `{latest_val}`")
+                        with col2:
+                            lw_rad = goes.get('longwave_radiation')
+                            if lw_rad and isinstance(lw_rad, dict):
+                                latest_val = list(lw_rad.values())[-1] if lw_rad else None
+                                if latest_val:
+                                    st.metric("Longwave (MJ/m²/day)", f"{latest_val:.2f}")
+                                    st.caption(f"Raw: `{latest_val}`")
+                
+                # ========================================
+                # GPM PRECIPITATION
+                # ========================================
+                gpm = sources.get('GPM Precipitation', {})
+                if gpm and gpm.get('available'):
+                    api_url = f"https://cmr.earthdata.nasa.gov/search/granules.json?short_name=GPM_3IMERGHH&bounding_box={lon-0.5},{lat-0.5},{lon+0.5},{lat+0.5}"
+                    web_url = "https://gpm.nasa.gov/data/directory"
+                    
+                    with st.expander("🌧️ GPM Satellite Precipitation", expanded=False):
+                        st.markdown(f'<a href="{web_url}" target="_blank">🔗 Open Website</a> | <a href="{api_url}" target="_blank">📡 View Raw API Response</a>', unsafe_allow_html=True)
+                        
+                        precip = gpm.get('precipitation_mm')
+                        if precip is not None:
+                            st.metric("Precipitation (mm)", f"{precip:.1f}")
+                            st.caption(f"Raw: `{precip}` mm")
+                
+                # ========================================
+                # MESOWEST STATIONS
+                # ========================================
+                mesowest = sources.get('MesoWest Stations', {})
+                if mesowest and mesowest.get('available') and mesowest.get('stations'):
+                    web_url = f"https://mesowest.utah.edu/cgi-bin/droman/meso_base_dyn.cgi?lat={lat}&lon={lon}&radius=50"
+                    
+                    with st.expander("📡 MesoWest Regional Stations", expanded=False):
+                        st.markdown(f'<a href="{web_url}" target="_blank">🔗 Open Website</a>', unsafe_allow_html=True)
+                        
+                        for station in mesowest['stations'][:3]:
+                            st.markdown(f"**Station: {station.get('name', 'Unknown')}**")
+                            col1, col2, col3 = st.columns(3)
+                            with col1:
+                                temp = station.get('temperature_c')
+                                if temp is not None:
+                                    st.metric("Temperature (°C)", f"{temp:.1f}")
+                                    st.caption(f"Raw: `{temp}`")
+                            with col2:
+                                wind = station.get('wind_speed_ms')
+                                if wind is not None:
+                                    st.metric("Wind (m/s)", f"{wind:.1f}")
+                                    st.caption(f"Raw: `{wind}`")
+                            with col3:
+                                snow = station.get('snow_depth_m')
+                                if snow is not None:
+                                    st.metric("Snow (m)", f"{snow:.2f}")
+                                    st.caption(f"Raw: `{snow}`")
+                
+                # ========================================
+                # AMSR2 MICROWAVE SWE
+                # ========================================
+                amsr2 = sources.get('AMSR2 Microwave SWE', {})
+                if amsr2 and amsr2.get('available'):
+                    api_url = f"https://cmr.earthdata.nasa.gov/search/granules.json?short_name=AU_DySno&bounding_box={lon-1},{lat-1},{lon+1},{lat+1}"
+                    web_url = "https://nsidc.org/data/au_dysno"
+                    
+                    with st.expander("📡 AMSR2 Microwave SWE", expanded=False):
+                        st.markdown(f'<a href="{web_url}" target="_blank">🔗 Open Website</a> | <a href="{api_url}" target="_blank">📡 View Raw API Response</a>', unsafe_allow_html=True)
+                        
+                        swe = amsr2.get('swe_mm')
+                        if swe is not None:
+                            st.metric("SWE (mm)", f"{swe:.1f}")
+                            st.caption(f"Raw: `{swe}` mm")
+                
+                # ========================================
+                # GLOBSNOW SWE
+                # ========================================
+                globsnow = sources.get('GlobSnow SWE', {})
+                if globsnow and globsnow.get('available'):
+                    web_url = "https://www.globsnow.info/"
+                    
+                    with st.expander("🌍 GlobSnow SWE (Northern Hemisphere)", expanded=False):
+                        st.markdown(f'<a href="{web_url}" target="_blank">🔗 Open Website</a>', unsafe_allow_html=True)
+                        
+                        swe = globsnow.get('swe_mm')
+                        if swe is not None:
+                            st.metric("SWE (mm)", f"{swe:.1f}")
+                            st.caption(f"Raw: `{swe}` mm")
+                
+                # ========================================
+                # COPERNICUS SNOW
+                # ========================================
+                copernicus = sources.get('Copernicus Snow', {})
+                if copernicus and copernicus.get('available'):
+                    web_url = "https://land.copernicus.eu/global/products/snow"
+                    
+                    with st.expander("🇪🇺 Copernicus Snow Products", expanded=False):
+                        st.markdown(f'<a href="{web_url}" target="_blank">🔗 Open Website</a>', unsafe_allow_html=True)
+                        
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            fsc = copernicus.get('fractional_snow_cover')
+                            if fsc is not None:
+                                st.metric("Snow Cover (%)", f"{fsc:.0f}")
+                                st.caption(f"Raw: `{fsc}`")
+                        with col2:
+                            swe = copernicus.get('swe_mm')
+                            if swe is not None:
+                                st.metric("SWE (mm)", f"{swe:.1f}")
+                                st.caption(f"Raw: `{swe}`")
+                
+                # ========================================
+                # SUMMARY: WHAT THE MODEL ACTUALLY USED
+                # ========================================
+                st.markdown("---")
+                st.markdown("### 📋 Model Input Summary")
+                st.markdown("*These are the final values passed to the avalanche prediction model:*")
                 
                 # Get data sources for attribution
                 data_sources_dict = {}
@@ -7941,161 +8218,37 @@ else:
                     for param, source in st.session_state.data_sources:
                         data_sources_dict[param] = source
                 
-                st.markdown("### 📊 Primary Conditions")
+                # Only show non-calculated inputs
+                model_inputs = []
+                for param, source in st.session_state.data_sources or []:
+                    if not any(x in source.lower() for x in ['calculated', 'physics', 'system', 'default', 'derived']):
+                        value = env.get(param)
+                        if value is not None:
+                            model_inputs.append({
+                                'Parameter': param,
+                                'Value': f"{value:.4f}" if isinstance(value, float) else str(value),
+                                'Source': source
+                            })
+                
+                if model_inputs:
+                    # Create a dataframe for clean display
+                    import pandas as pd
+                    df = pd.DataFrame(model_inputs)
+                    st.dataframe(df, hide_index=True, use_container_width=True)
+                
+                # Coordinate box for manual verification
+                st.markdown("---")
+                st.markdown("**📋 Coordinates for manual verification:**")
                 col1, col2 = st.columns(2)
                 with col1:
-                    temp = env.get('TA') or 0
-                    temp_source = data_sources_dict.get('TA', 'Unknown')
-                    st.markdown(render_data_with_verification(
-                        "Temperature", temp, format_temp(temp), temp_source, lat, lon
-                    ), unsafe_allow_html=True)
-                    
-                    radiation = env.get('ISWR_daily') or 0
-                    rad_source = data_sources_dict.get('ISWR_daily', 'Unknown')
-                    st.markdown(render_data_with_verification(
-                        "Solar Radiation", radiation, format_radiation(radiation), rad_source, lat, lon
-                    ), unsafe_allow_html=True)
-                
+                    st.code(f"Latitude: {lat:.6f}\nLongitude: {lon:.6f}")
                 with col2:
-                    snow_m = env.get('max_height') or 0
-                    snow_change_m = env.get('max_height_1_diff') or 0
-                    snow_source = data_sources_dict.get('max_height', 'Unknown')
-                    snow_display = format_snow_depth(snow_m)
-                    if snow_change_m != 0:
-                        snow_change_display = format_snow_depth(abs(snow_change_m))
-                        delta_str = f" (+{snow_change_display}/24h)" if snow_change_m > 0 else f" (-{snow_change_display}/24h)"
-                    else:
-                        delta_str = ""
-                    st.markdown(render_data_with_verification(
-                        "Snow Depth", snow_m, f"{snow_display}{delta_str}", snow_source, lat, lon
-                    ), unsafe_allow_html=True)
-                    
-                    stability = env.get('S5') or 2.5
-                    st.markdown(render_data_with_verification(
-                        "Stability Index", stability, f"{stability:.2f}", "Calculated (Physics Model)", lat, lon
-                    ), unsafe_allow_html=True)
+                    st.code(f"Decimal: {lat:.4f}, {lon:.4f}\nUse these in any API")
                 
-                # Additional weather metrics with sources
-                st.markdown("---")
-                st.markdown("### 🌡️ Additional Conditions")
-                
-                col1, col2 = st.columns(2)
-                with col1:
-                    temp_daily = env.get('TA_daily') or 0
-                    daily_source = data_sources_dict.get('TA_daily', 'Unknown')
-                    st.markdown(render_data_with_verification(
-                        "Daily Avg Temperature", temp_daily, format_temp(temp_daily), daily_source, lat, lon
-                    ), unsafe_allow_html=True)
-                    
-                    swe = env.get('SWE_daily') or 0
-                    swe_source = data_sources_dict.get('SWE_daily', 'Unknown')
-                    st.markdown(render_data_with_verification(
-                        "Snow Water Equivalent", swe, format_precip(swe), swe_source, lat, lon
-                    ), unsafe_allow_html=True)
-                
-                with col2:
-                    rain = env.get('MS_Rain_daily') or 0
-                    rain_source = data_sources_dict.get('MS_Rain_daily', 'Unknown')
-                    st.markdown(render_data_with_verification(
-                        "Precipitation (24h)", rain, format_precip(rain), rain_source, lat, lon
-                    ), unsafe_allow_html=True)
-                    
-                    lwc = env.get('mean_lwc') or 0
-                    st.markdown(render_data_with_verification(
-                        "Liquid Water Content", lwc, f"{lwc:.1f}%", "Calculated (Physics Model)", lat, lon
-                    ), unsafe_allow_html=True)
-                
-                # Radiation data section
-                st.markdown("---")
-                st.markdown("### ☀️ Radiation Data")
-                col1, col2 = st.columns(2)
-                with col1:
-                    ilwr = env.get('ILWR') or 0
-                    ilwr_source = data_sources_dict.get('ILWR', 'Unknown')
-                    st.markdown(render_data_with_verification(
-                        "Incoming Longwave", ilwr, f"{ilwr:.1f} W/m²", ilwr_source, lat, lon
-                    ), unsafe_allow_html=True)
-                    
-                    olwr = env.get('OLWR') or 0
-                    olwr_source = data_sources_dict.get('OLWR', 'Unknown')
-                    st.markdown(render_data_with_verification(
-                        "Outgoing Longwave", olwr, f"{olwr:.1f} W/m²", olwr_source, lat, lon
-                    ), unsafe_allow_html=True)
-                
-                with col2:
-                    ilwr_daily = env.get('ILWR_daily') or 0
-                    ilwr_d_source = data_sources_dict.get('ILWR_daily', 'Unknown')
-                    st.markdown(render_data_with_verification(
-                        "Daily Avg Longwave In", ilwr_daily, f"{ilwr_daily:.1f} W/m²", ilwr_d_source, lat, lon
-                    ), unsafe_allow_html=True)
-                    
-                    tss = env.get('TSS_mod') or 0
-                    tss_source = data_sources_dict.get('TSS_mod', 'Unknown')
-                    st.markdown(render_data_with_verification(
-                        "Snow Surface Temp", tss, format_temp(tss), tss_source, lat, lon
-                    ), unsafe_allow_html=True)
-                
-                # Stability interpretation
-                st.markdown("---")
-                if stability < 1.0:
-                    st.warning("⚠️ Very low stability - high avalanche potential")
-                elif stability < 1.5:
-                    st.warning("⚠️ Poor stability - significant avalanche potential")
-                elif stability < 2.0:
-                    st.info("Moderate stability - some avalanche potential")
-                else:
-                    st.success("Good stability - lower avalanche potential")
-                
-                # Data quality summary - show all fetched sources with links
-                with st.expander("📊 All Data Sources & Verification Links"):
-                    if st.session_state.data_sources:
-                        st.markdown("**Click links to verify data from each source:**")
-                        
-                        # Group by source type
-                        sources_by_type = {}
-                        for param, source in st.session_state.data_sources:
-                            if source not in sources_by_type:
-                                sources_by_type[source] = []
-                            sources_by_type[source].append(param)
-                        
-                        # Filter to only show satellite/fetched sources (not calculated)
-                        fetched_sources = {k: v for k, v in sources_by_type.items() 
-                                          if not any(x in k.lower() for x in ['calculated', 'physics', 'system', 'default'])}
-                        
-                        for source, params in sorted(fetched_sources.items()):
-                            link_info = get_verification_link_for_source(source, lat, lon)
-                            params_str = ", ".join(params[:5])
-                            if len(params) > 5:
-                                params_str += f" (+{len(params)-5} more)"
-                            
-                            if link_info:
-                                url = link_info.get('url', '#')
-                                api_url = link_info.get('api_url')
-                                link_html = f'<a href="{url}" target="_blank">🔗 Website</a>'
-                                if api_url:
-                                    link_html += f' | <a href="{api_url}" target="_blank">📡 API</a>'
-                                st.markdown(f"""• **{source}**: {params_str} - {link_html}""", unsafe_allow_html=True)
-                            else:
-                                st.markdown(f"• **{source}**: {params_str}")
-                        
-                        # Show calculated sources separately
-                        calculated_sources = {k: v for k, v in sources_by_type.items() 
-                                             if any(x in k.lower() for x in ['calculated', 'physics', 'system'])}
-                        if calculated_sources:
-                            st.markdown("---")
-                            st.markdown("**Derived/Calculated values** (not from external sources):")
-                            for source, params in sorted(calculated_sources.items()):
-                                params_str = ", ".join(params[:5])
-                                if len(params) > 5:
-                                    params_str += f" (+{len(params)-5} more)"
-                                st.markdown(f"• 🔬 **{source}**: {params_str}")
-                    
-                    # Coordinate box for manual verification
-                    st.markdown("---")
-                    st.markdown("**📋 Coordinates for manual verification:**")
-                    st.code(f"Latitude: {lat:.6f}\nLongitude: {lon:.6f}\nDecimal: {lat:.4f}, {lon:.4f}")
+            elif st.session_state.env_data:
+                st.warning("Raw satellite data not available. Run a new assessment to see detailed source data.")
             else:
-                st.info("No environmental data available")
+                st.info("No environmental data available. Run an assessment first.")
         
         # TAB 4: Live View (Satellite/Snow Imagery)
         with tab_live:
