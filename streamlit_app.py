@@ -9490,41 +9490,51 @@ if analysis_mode == "📍 Single Point":
                         else:
                             input_aligned[col] = np.nan
                     
-                    # Scale, impute, then the data is ready for the model
-                    # First simple impute any completely missing columns for scaling
-                    simple_imp = SimpleImputer(strategy='mean')
-                    input_simple = simple_imp.fit_transform(input_aligned)
+                    # Convert to float (NaN stays as NaN)
+                    input_aligned = input_aligned.astype(float)
                     
-                    # Scale with the dataset scaler
-                    input_scaled_for_knn = dataset_scaler.transform(input_simple)
+                    # Track which features were provided vs need imputation
+                    provided_features = [col for col in input_data.columns if col in available_features and not pd.isna(input_data[col].values[0])]
+                    missing_features = [col for col in available_features if col not in provided_features]
                     
-                    # Apply KNN imputation (fills based on 5 nearest neighbors in training data)
-                    input_imputed = knn_imputer.transform(input_scaled_for_knn)
+                    # CRITICAL: Match notebook's preprocessing exactly
+                    # Scale ONLY the provided features, leave NaN as NaN
+                    for col in provided_features:
+                        idx = available_features.index(col)
+                        mean = dataset_scaler.mean_[idx]
+                        scale = dataset_scaler.scale_[idx]
+                        input_aligned[col] = (input_aligned[col] - mean) / scale
                     
-                    # The data is already scaled, ready for model
+                    # Apply KNN imputation (fills NaN based on 5 nearest neighbors in training data)
+                    # KNN works on the partially scaled data with NaN values
+                    input_imputed = knn_imputer.transform(input_aligned.values)
+                    
+                    # The data is now fully scaled and imputed, ready for model
                     input_scaled = input_imputed
                     
                     # Inverse transform to get imputed values in original scale for display
                     input_imputed_original = dataset_scaler.inverse_transform(input_imputed)
                     
                     # Log how many features were imputed and store the values
-                    n_missing = input_data.isna().sum().sum()
+                    n_missing = len(missing_features)
                     
                     # Track which features were imputed vs from satellite data
                     knn_imputed_values = {}
                     original_values = {}
                     for idx, col in enumerate(available_features):
-                        original_val = input_aligned[col].values[0]
                         imputed_val = input_imputed_original[0][idx]
-                        if pd.isna(original_val) or (isinstance(original_val, float) and np.isnan(original_val)):
+                        if col in missing_features:
+                            # This feature was imputed by KNN
                             knn_imputed_values[col] = imputed_val
                         else:
+                            # This feature was provided - get original unscaled value
+                            original_val = input_data[col].values[0] if col in input_data.columns else imputed_val
                             original_values[col] = original_val
                     
                     st.session_state.knn_imputation_info = {
                         'features_imputed': int(n_missing),
-                        'total_features': len(feature_names),
-                        'features_from_satellite': len(feature_names) - int(n_missing),
+                        'total_features': len(available_features),
+                        'features_from_satellite': len(provided_features),
                         'knn_imputed_values': knn_imputed_values,
                         'original_values': original_values,
                         'feature_names': available_features
