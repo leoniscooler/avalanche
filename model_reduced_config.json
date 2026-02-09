@@ -1,72 +1,62 @@
 {
-  "model_type": "PhysicsEnhancedStudentModel",
-  "input_dim": 14,
+  "input_dim": 38,
+  "phys_indices": {
+    "ISWR": 11,
+    "ILWR": 17,
+    "OLWR": 16,
+    "Qs": 32,
+    "Ql": 10
+  },
+  "focal_alpha": 0.9,
+  "focal_gamma": 3.0,
+  "f2_weight": 2.5,
+  "recall_weight": 1.0,
+  "beta": 2.5,
+  "phys_warmup_epochs": 15,
+  "max_phys_weight": 0.08,
+  "phys_data_weight": 0.05,
+  "dropout_rate": 0.25,
+  "clip_norm": 1.0,
   "feature_names": [
-    "mean_lwc",
+    "mean_lwc_3_diff",
+    "OLWR_daily",
+    "max_height_1_diff",
+    "sum_up",
+    "ISWR_h_daily",
     "max_lwc",
+    "S5_daily",
+    "mean_lwc",
+    "water_2_diff",
+    "TA_daily",
+    "Ql",
+    "ISWR_daily",
+    "SWE_daily",
+    "ILWR_daily",
+    "profile_time",
+    "Qw_daily",
+    "OLWR",
+    "ILWR",
+    "Ql_daily",
+    "prop_up",
+    "ISWR_dir_daily",
+    "water_1_diff",
+    "TSS_mod",
+    "lowest_3_diff",
+    "max_height_2_diff",
+    "max_height",
     "water",
+    "prop_wet_2_diff",
+    "MS_Rain_daily",
+    "water_3_diff",
+    "std_lwc",
+    "mean_lwc_2_diff",
+    "Qs",
+    "max_height_3_diff",
     "S5",
     "TA",
-    "max_height",
-    "ILWR",
-    "OLWR",
-    "Qs",
-    "Ql",
-    "prop_wet_2_diff",
-    "TSS_mod",
-    "SWE_daily",
-    "ISWR_daily"
+    "lowest_2_diff",
+    "ISWR_diff_daily"
   ],
-  "hidden_units": [
-    128,
-    64,
-    32
-  ],
-  "dropout_rate": 0.2,
-  "recommended_threshold": "most_accurate",
-  "physics_info": {
-    "base_features": 14,
-    "derived_features": 13,
-    "total_features": 27,
-    "derived_names": [
-      "stefan_boltzmann_olwr",
-      "net_radiation",
-      "net_longwave",
-      "total_energy_flux",
-      "bowen_ratio",
-      "temp_radiation_index",
-      "melt_potential_index",
-      "saturation_vapor_pressure",
-      "snow_stability_index",
-      "thermal_stress_index",
-      "lwc_stability_ratio",
-      "height_water_ratio",
-      "radiation_balance_ratio"
-    ]
-  },
-  "thresholds": {
-    "default": 0.5,
-    "most_accurate": 0.9400000000000002,
-    "balanced": 0.7200000000000001
-  },
-  "metrics": {
-    "default": {
-      "accuracy": 0.9461743772241993,
-      "recall": 0.9484536082474226,
-      "precision": 0.4423076923076923,
-      "f2": 0.7718120805369127
-    },
-    "most_accurate": {
-      "accuracy": 0.9599644128113879,
-      "recall": 0.7422680412371134,
-      "precision": 0.5255474452554745,
-      "f2": 0.6857142857142857
-    },
-    "balanced": {
-      "accuracy": 0.9515124555160143,
-      "recall": 0.9226804123711341,
-      "precision": 0.468586387434555,
-      "f2": 0.7728842832469776
-    }
-  }
+  "n_features": 38,
+  "knn_neighbors": 5
 }
