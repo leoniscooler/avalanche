@@ -8071,7 +8071,7 @@ else:
                     has_valid_data = any([temp_valid, snow_valid, wind_valid, rh_valid, precip_valid, sw_valid])
                     
                     if has_valid_data:
-                        with st.expander("🌐 Open-Meteo (Real-time Weather)", expanded=False):
+                        with st.expander("🌐 Open-Meteo (Real-time Weather)", expanded=True):
                             st.markdown(f'<a href="{web_url}" target="_blank">🔗 Open Website</a> | <a href="{api_url}" target="_blank">📡 View Raw API Response</a>', unsafe_allow_html=True)
                             
                             col1, col2, col3 = st.columns(3)
@@ -8787,56 +8787,35 @@ else:
                                 'Source': source
                             })
                 
-                # Get KNN info first to determine tab count
+                if model_inputs:
+                    # Create a dataframe for clean display
+                    import pandas as pd
+                    with st.expander("📊 Satellite/API Input Values", expanded=False):
+                        df = pd.DataFrame(model_inputs)
+                        st.dataframe(df, hide_index=True, use_container_width=True)
+                        
+                        # Generate copy-paste format: "param1 value1, param2 value2, ..."
+                        copy_text_satellite = ", ".join([f"{row['Parameter']} {row['Value']}" for row in model_inputs])
+                        st.code(copy_text_satellite, language=None)
+                        st.caption("👆 Click above to select, then copy (Ctrl+C)")
+                
+                # Show KNN imputed values in a separate collapsable table
                 knn_info = st.session_state.get('knn_imputation_info', {})
                 knn_imputed = knn_info.get('knn_imputed_values', {})
-                knn_rows = []
-                
-                # Debug: show KNN info status
-                if knn_info:
-                    st.caption(f"🔍 Debug: KNN info found - {knn_info.get('features_imputed', 0)} features imputed, {len(knn_imputed)} values in dict")
-                else:
-                    st.caption("🔍 Debug: No KNN imputation info found in session state")
                 
                 if knn_imputed:
-                    for param, value in knn_imputed.items():
-                        knn_rows.append({
-                            'Parameter': param,
-                            'KNN Predicted Value': format_value_no_units(param, value, use_imperial),
-                            'Source': 'KNN Imputer (k=5)'
-                        })
-                
-                if model_inputs or knn_rows:
-                    # Create tabs for Satellite and KNN values
-                    import pandas as pd
-                    
-                    tab_labels = []
-                    if model_inputs:
-                        tab_labels.append(f"📡 Satellite/API ({len(model_inputs)})")
-                    if knn_rows:
-                        tab_labels.append(f"🔮 KNN Calculated ({len(knn_rows)})")
-                    tab_labels.append("📋 All Combined")
-                    
-                    input_tabs = st.tabs(tab_labels)
-                    tab_idx = 0
-                    
-                    # Satellite/API Tab
-                    if model_inputs:
-                        with input_tabs[tab_idx]:
-                            st.markdown("*Values from satellite imagery and weather APIs:*")
-                            df = pd.DataFrame(model_inputs)
-                            st.dataframe(df, hide_index=True, use_container_width=True)
-                            
-                            # Generate copy-paste format: "param1 value1, param2 value2, ..."
-                            copy_text_satellite = ", ".join([f"{row['Parameter']} {row['Value']}" for row in model_inputs])
-                            st.code(copy_text_satellite, language=None)
-                            st.caption("👆 Click above to select, then copy (Ctrl+C)")
-                        tab_idx += 1
-                    
-                    # KNN Calculated Tab
-                    if knn_rows:
-                        with input_tabs[tab_idx]:
-                            st.markdown("*Values predicted by KNN imputer (k=5, distance-weighted) based on similar conditions in ~50,000 training samples:*")
+                    with st.expander(f"🔮 KNN Predicted Values ({len(knn_imputed)} features)", expanded=False):
+                        st.markdown("*These values were predicted by the KNN imputer (k=5, distance-weighted) based on similar conditions in the training data (~50,000 samples):*")
+                        
+                        knn_rows = []
+                        for param, value in knn_imputed.items():
+                            knn_rows.append({
+                                'Parameter': param,
+                                'KNN Predicted Value': format_value_no_units(param, value, use_imperial),
+                                'Source': 'KNN Imputer (k=5)'
+                            })
+                        
+                        if knn_rows:
                             knn_df = pd.DataFrame(knn_rows)
                             st.dataframe(knn_df, hide_index=True, use_container_width=True)
                             
@@ -8844,25 +8823,19 @@ else:
                             copy_text_knn = ", ".join([f"{row['Parameter']} {row['KNN Predicted Value']}" for row in knn_rows])
                             st.code(copy_text_knn, language=None)
                             st.caption(f"👆 Click above to select, then copy (Ctrl+C) · {len(knn_imputed)} of {knn_info.get('total_features', 38)} features imputed")
-                        tab_idx += 1
-                    
-                    # Combined Tab
-                    with input_tabs[tab_idx]:
-                        st.markdown("*All model inputs combined (Satellite + KNN):*")
-                        all_inputs = {}
-                        for row in model_inputs:
-                            all_inputs[row['Parameter']] = row['Value']
-                        for row in knn_rows:
-                            all_inputs[row['Parameter']] = row['KNN Predicted Value']
-                        
-                        if all_inputs:
-                            all_rows = [{'Parameter': k, 'Value': v} for k, v in all_inputs.items()]
-                            all_df = pd.DataFrame(all_rows)
-                            st.dataframe(all_df, hide_index=True, use_container_width=True)
-                            
-                            copy_text_all = ", ".join([f"{param} {val}" for param, val in all_inputs.items()])
-                            st.code(copy_text_all, language=None)
-                            st.caption(f"👆 All {len(all_inputs)} features in copy-paste format")
+                
+                # Combined copy button for ALL model inputs (satellite + KNN)
+                all_inputs = {}
+                for row in model_inputs:
+                    all_inputs[row['Parameter']] = row['Value']
+                for row in knn_rows if knn_imputed else []:
+                    all_inputs[row['Parameter']] = row['KNN Predicted Value']
+                
+                if all_inputs:
+                    st.markdown("**📋 All Model Inputs (Combined)**")
+                    copy_text_all = ", ".join([f"{param} {val}" for param, val in all_inputs.items()])
+                    st.code(copy_text_all, language=None)
+                    st.caption(f"👆 All {len(all_inputs)} features in copy-paste format")
                 
                 # Coordinate box for manual verification
                 st.markdown("---")
@@ -9536,10 +9509,6 @@ if analysis_mode == "📍 Single Point":
                     provided_features = [col for col in input_data.columns if col in available_features and not pd.isna(input_data[col].values[0])]
                     missing_features = [col for col in available_features if col not in provided_features]
                     
-                    print(f"📊 Feature tracking: {len(provided_features)} provided, {len(missing_features)} to impute")
-                    print(f"   Provided: {provided_features}")
-                    print(f"   Missing: {missing_features[:5]}..." if len(missing_features) > 5 else f"   Missing: {missing_features}")
-                    
                     # CRITICAL: Match notebook's preprocessing exactly
                     # Scale ONLY the provided features, leave NaN as NaN
                     for col in provided_features:
@@ -9569,8 +9538,6 @@ if analysis_mode == "📍 Single Point":
                             original_val = input_data[col].values[0] if col in input_data.columns else imputed_val
                             original_values[col] = original_val
                     
-                    print(f"📊 KNN imputation result: {len(knn_imputed_values)} values imputed")
-                    
                     st.session_state.knn_imputation_info = {
                         'features_imputed': int(n_missing),
                         'total_features': len(available_features),
@@ -9588,37 +9555,8 @@ if analysis_mode == "📍 Single Point":
                     if os.path.exists(scaler_path) and os.path.exists(imputer_path):
                         scaler = joblib.load(scaler_path)
                         imputer = joblib.load(imputer_path)
-                        available_features = feature_names
-                        
-                        # Track which features were provided vs need imputation
-                        provided_features = [col for col in input_data.columns if col in available_features and not pd.isna(input_data[col].values[0])]
-                        missing_features = [col for col in available_features if col not in provided_features]
-                        
                         input_imputed = imputer.transform(input_data)
                         input_scaled = scaler.transform(input_imputed)
-                        
-                        # Inverse transform to get imputed values in original scale
-                        input_imputed_original = scaler.inverse_transform(input_scaled)
-                        
-                        # Track KNN imputed values
-                        knn_imputed_values = {}
-                        original_values = {}
-                        for idx, col in enumerate(available_features):
-                            imputed_val = input_imputed_original[0][idx]
-                            if col in missing_features:
-                                knn_imputed_values[col] = imputed_val
-                            else:
-                                original_val = input_data[col].values[0] if col in input_data.columns else imputed_val
-                                original_values[col] = original_val
-                        
-                        st.session_state.knn_imputation_info = {
-                            'features_imputed': len(missing_features),
-                            'total_features': len(available_features),
-                            'features_from_satellite': len(provided_features),
-                            'knn_imputed_values': knn_imputed_values,
-                            'original_values': original_values,
-                            'feature_names': available_features
-                        }
                     else:
                         raise ValueError("Could not load KNN imputer from datasets or saved files")
                 
