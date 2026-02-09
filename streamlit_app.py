@@ -8786,6 +8786,11 @@ else:
                     with st.expander("📊 Satellite/API Input Values", expanded=False):
                         df = pd.DataFrame(model_inputs)
                         st.dataframe(df, hide_index=True, use_container_width=True)
+                        
+                        # Generate copy-paste format: "param1 value1, param2 value2, ..."
+                        copy_text_satellite = ", ".join([f"{row['Parameter']} {row['Value']}" for row in model_inputs])
+                        st.code(copy_text_satellite, language=None)
+                        st.caption("👆 Click above to select, then copy (Ctrl+C)")
                 
                 # Show KNN imputed values in a separate collapsable table
                 knn_info = st.session_state.get('knn_imputation_info', {})
@@ -8806,7 +8811,24 @@ else:
                         if knn_rows:
                             knn_df = pd.DataFrame(knn_rows)
                             st.dataframe(knn_df, hide_index=True, use_container_width=True)
-                            st.caption(f"💡 {len(knn_imputed)} of {knn_info.get('total_features', 38)} features were imputed from training data patterns.")
+                            
+                            # Generate copy-paste format for KNN values
+                            copy_text_knn = ", ".join([f"{row['Parameter']} {row['KNN Predicted Value']}" for row in knn_rows])
+                            st.code(copy_text_knn, language=None)
+                            st.caption(f"👆 Click above to select, then copy (Ctrl+C) · {len(knn_imputed)} of {knn_info.get('total_features', 38)} features imputed")
+                
+                # Combined copy button for ALL model inputs (satellite + KNN)
+                all_inputs = {}
+                for row in model_inputs:
+                    all_inputs[row['Parameter']] = row['Value']
+                for row in knn_rows if knn_imputed else []:
+                    all_inputs[row['Parameter']] = row['KNN Predicted Value']
+                
+                if all_inputs:
+                    st.markdown("**📋 All Model Inputs (Combined)**")
+                    copy_text_all = ", ".join([f"{param} {val}" for param, val in all_inputs.items()])
+                    st.code(copy_text_all, language=None)
+                    st.caption(f"👆 All {len(all_inputs)} features in copy-paste format")
                 
                 # Coordinate box for manual verification
                 st.markdown("---")
