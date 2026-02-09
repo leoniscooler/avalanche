@@ -7358,8 +7358,11 @@ else:
                 st.session_state.wind_loading_results = None
                 st.rerun()
         
-        # Main risk card - ensure minimum 1% display
-        display_prob = max(results['avalanche_probability'] * 100, 1)
+        # Main risk card - show 0% only for NONE, otherwise minimum 1%
+        if results['risk_level'] == 'NONE':
+            display_prob = 0
+        else:
+            display_prob = max(results['avalanche_probability'] * 100, 1)
         st.markdown(f"""
         <div class="risk-card {results['risk_class']}" style="margin-top: 1rem;">
             <div class="risk-label">Current Avalanche Risk</div>
@@ -7674,9 +7677,10 @@ else:
                         )
                         
                         # Current location marker (red)
+                        map_risk_pct = 0 if results['risk_level'] == 'NONE' else max(results['avalanche_probability']*100, 1)
                         folium.Marker(
                             [loc['latitude'], loc['longitude']],
-                            popup=f"Current Location<br>Risk: {max(results['avalanche_probability']*100, 1):.0f}%",
+                            popup=f"Current Location<br>Risk: {map_risk_pct:.0f}%",
                             icon=folium.Icon(color='red', icon='exclamation-triangle', prefix='fa'),
                             tooltip="Current location (Higher risk)"
                         ).add_to(alt_map)
@@ -9657,7 +9661,7 @@ if analysis_mode == "📍 Single Point":
             risk_level = "NONE"
             risk_class = "risk-none"
             risk_message = "No snow cover detected"
-            avalanche_probability = 0.01  # Show 1% minimum instead of 0%
+            avalanche_probability = 0.0  # 0% only for NONE (no snow)
             model_confidence = 1.0  # Very confident there's no risk without snow
         elif avalanche_probability >= optimal_threshold:
             # Probability at or above threshold = avalanche predicted = HIGH risk
