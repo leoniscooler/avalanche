@@ -8717,57 +8717,53 @@ else:
                     for param, source in st.session_state.data_sources:
                         data_sources_dict[param] = source
                 
-                # Helper to format value with imperial conversion
-                def format_value_with_imperial(param, value, use_imperial):
-                    """Format value with optional imperial conversion based on parameter name"""
+                # Helper to format value without units (just the number)
+                def format_value_no_units(param, value, use_imperial):
+                    """Format value as plain number, optionally converted to imperial"""
                     if not isinstance(value, (int, float)):
                         return str(value)
                     
-                    # Determine unit and conversion based on parameter name
+                    # Determine conversion based on parameter name
                     param_lower = param.lower()
                     
                     if 'temp' in param_lower:
                         if use_imperial:
-                            return f"{value:.2f} °C ({imperial_temp(value):.1f}°F)"
-                        return f"{value:.2f} °C"
+                            return f"{imperial_temp(value):.2f}"
+                        return f"{value:.2f}"
                     
                     elif 'snow_depth' in param_lower or param_lower == 'snow_depth':
-                        # Assume cm for snow depth
                         if use_imperial:
-                            return f"{value:.2f} cm ({imperial_length_cm(value):.1f} in)"
-                        return f"{value:.2f} cm"
+                            return f"{imperial_length_cm(value):.2f}"
+                        return f"{value:.2f}"
                     
                     elif 'swe' in param_lower:
-                        # SWE in mm
                         if use_imperial:
-                            return f"{value:.2f} mm ({imperial_length_mm(value):.2f} in)"
-                        return f"{value:.2f} mm"
+                            return f"{imperial_length_mm(value):.2f}"
+                        return f"{value:.2f}"
                     
-                    elif 'precip' in param_lower or 'rainfall' in param_lower:
-                        # Precipitation in mm
+                    elif 'precip' in param_lower or 'rainfall' in param_lower or 'rain' in param_lower:
                         if use_imperial:
-                            return f"{value:.2f} mm ({imperial_length_mm(value):.2f} in)"
-                        return f"{value:.2f} mm"
+                            return f"{imperial_length_mm(value):.2f}"
+                        return f"{value:.2f}"
                     
                     elif 'wind_speed' in param_lower:
-                        # Wind could be km/h or m/s - assume m/s for model
                         if use_imperial:
-                            return f"{value:.2f} m/s ({imperial_speed_ms(value):.1f} mph)"
-                        return f"{value:.2f} m/s"
+                            return f"{imperial_speed_ms(value):.2f}"
+                        return f"{value:.2f}"
                     
                     elif 'humidity' in param_lower:
-                        return f"{value:.1f}%"
+                        return f"{value:.2f}"
                     
-                    elif 'radiation' in param_lower or 'solar' in param_lower:
-                        return f"{value:.2f} W/m²"
+                    elif 'radiation' in param_lower or 'solar' in param_lower or 'iswr' in param_lower or 'ilwr' in param_lower or 'olwr' in param_lower:
+                        return f"{value:.2f}"
                     
                     elif 'elevation' in param_lower or 'altitude' in param_lower:
                         if use_imperial:
-                            return f"{value:.1f} m ({value * 3.28084:.0f} ft)"
-                        return f"{value:.1f} m"
+                            return f"{value * 3.28084:.1f}"
+                        return f"{value:.1f}"
                     
                     elif 'slope' in param_lower or 'aspect' in param_lower or 'angle' in param_lower:
-                        return f"{value:.1f}°"
+                        return f"{value:.2f}"
                     
                     else:
                         return f"{value:.4f}" if isinstance(value, float) else str(value)
@@ -8780,7 +8776,7 @@ else:
                         if value is not None:
                             model_inputs.append({
                                 'Parameter': param,
-                                'Value': format_value_with_imperial(param, value, use_imperial),
+                                'Value': format_value_no_units(param, value, use_imperial),
                                 'Source': source
                             })
                 
@@ -8803,7 +8799,7 @@ else:
                         for param, value in knn_imputed.items():
                             knn_rows.append({
                                 'Parameter': param,
-                                'KNN Predicted Value': format_value_with_imperial(param, value, use_imperial),
+                                'KNN Predicted Value': format_value_no_units(param, value, use_imperial),
                                 'Source': 'KNN Imputer (k=5)'
                             })
                         
