@@ -9556,7 +9556,7 @@ if analysis_mode == "📍 Single Point":
                 # Create OptimizedSafetyPINN with saved configuration
                 model = OptimizedSafetyPINN(
                     phys_idx=phys_indices,
-                    input_dim=len(available_features) if knn_result[0] is not None else input_dim,
+                    input_dim=len(available_features),
                     focal_alpha=model_config.get('focal_alpha', 0.90),
                     focal_gamma=model_config.get('focal_gamma', 3.0),
                     f2_weight=model_config.get('f2_weight', 2.5),
@@ -9645,6 +9645,8 @@ if analysis_mode == "📍 Single Point":
             avalanche_probability = min(max(risk_score, 0.0), 1.0)
             # For physics-based, confidence based on how extreme the indicators are
             model_confidence = abs(avalanche_probability - 0.5) * 2
+            # Use default thresholds for physics-based model
+            optimal_threshold = 0.5  # Default for non-ML model
         
         # Check if there's no snow
         snow_depth = st.session_state.inputs.get('max_height', 0)
@@ -9654,11 +9656,13 @@ if analysis_mode == "📍 Single Point":
             risk_message = "No snow cover detected"
             avalanche_probability = 0.0
             model_confidence = 1.0  # Very confident there's no risk without snow
-        elif avalanche_probability >= 0.7:
+        elif avalanche_probability >= optimal_threshold:
+            # Probability at or above threshold = avalanche predicted = HIGH risk
             risk_level = "HIGH"
             risk_class = "risk-high"
             risk_message = "Dangerous conditions likely"
-        elif avalanche_probability >= 0.4:
+        elif avalanche_probability >= optimal_threshold * 0.7:
+            # Probability within 70-100% of threshold = MODERATE risk
             risk_level = "MODERATE"
             risk_class = "risk-medium"
             risk_message = "Exercise caution"
