@@ -6954,6 +6954,7 @@ if analysis_mode == "🗺️ Route Analysis":
         
         # TAB: AI Assistant
         with rt_tab_ai:
+            st.warning("⚠️ **AI-Generated Content**: Responses are from a Large Language Model (LLM) and may be inaccurate. Always verify critical safety information with official sources.", icon="⚠️")
             st.caption("Ask anything about your route - the AI has access to all analysis data")
             
             if 'route_qa_history' not in st.session_state:
@@ -7357,12 +7358,13 @@ else:
                 st.session_state.wind_loading_results = None
                 st.rerun()
         
-        # Main risk card
+        # Main risk card - ensure minimum 1% display
+        display_prob = max(results['avalanche_probability'] * 100, 1)
         st.markdown(f"""
         <div class="risk-card {results['risk_class']}" style="margin-top: 1rem;">
             <div class="risk-label">Current Avalanche Risk</div>
             <div class="risk-level">{results['risk_level']}</div>
-            <div class="risk-confidence">{results['avalanche_probability']*100:.0f}% probability</div>
+            <div class="risk-confidence">{display_prob:.0f}% probability</div>
         </div>
         """, unsafe_allow_html=True)
         
@@ -7534,6 +7536,7 @@ else:
         
         # TAB: AI Assistant
         with tab_ai:
+            st.warning("⚠️ **AI-Generated Content**: Responses are from a Large Language Model (LLM) and may be inaccurate. Always verify critical safety information with official sources.", icon="⚠️")
             st.caption("Ask anything in plain English - the AI has access to all current data")
             
             if 'qa_history' not in st.session_state:
@@ -7673,7 +7676,7 @@ else:
                         # Current location marker (red)
                         folium.Marker(
                             [loc['latitude'], loc['longitude']],
-                            popup=f"Current Location<br>Risk: {results['avalanche_probability']*100:.0f}%",
+                            popup=f"Current Location<br>Risk: {max(results['avalanche_probability']*100, 1):.0f}%",
                             icon=folium.Icon(color='red', icon='exclamation-triangle', prefix='fa'),
                             tooltip="Current location (Higher risk)"
                         ).add_to(alt_map)
@@ -9654,7 +9657,7 @@ if analysis_mode == "📍 Single Point":
             risk_level = "NONE"
             risk_class = "risk-none"
             risk_message = "No snow cover detected"
-            avalanche_probability = 0.0
+            avalanche_probability = 0.01  # Show 1% minimum instead of 0%
             model_confidence = 1.0  # Very confident there's no risk without snow
         elif avalanche_probability >= optimal_threshold:
             # Probability at or above threshold = avalanche predicted = HIGH risk
