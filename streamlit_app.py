@@ -8071,7 +8071,7 @@ else:
                     has_valid_data = any([temp_valid, snow_valid, wind_valid, rh_valid, precip_valid, sw_valid])
                     
                     if has_valid_data:
-                        with st.expander("🌐 Open-Meteo (Real-time Weather)", expanded=True):
+                        with st.expander("🌐 Open-Meteo (Real-time Weather)", expanded=False):
                             st.markdown(f'<a href="{web_url}" target="_blank">🔗 Open Website</a> | <a href="{api_url}" target="_blank">📡 View Raw API Response</a>', unsafe_allow_html=True)
                             
                             col1, col2, col3 = st.columns(3)
@@ -8787,35 +8787,50 @@ else:
                                 'Source': source
                             })
                 
-                if model_inputs:
-                    # Create a dataframe for clean display
-                    import pandas as pd
-                    with st.expander("📊 Satellite/API Input Values", expanded=False):
-                        df = pd.DataFrame(model_inputs)
-                        st.dataframe(df, hide_index=True, use_container_width=True)
-                        
-                        # Generate copy-paste format: "param1 value1, param2 value2, ..."
-                        copy_text_satellite = ", ".join([f"{row['Parameter']} {row['Value']}" for row in model_inputs])
-                        st.code(copy_text_satellite, language=None)
-                        st.caption("👆 Click above to select, then copy (Ctrl+C)")
-                
-                # Show KNN imputed values in a separate collapsable table
+                # Get KNN info first to determine tab count
                 knn_info = st.session_state.get('knn_imputation_info', {})
                 knn_imputed = knn_info.get('knn_imputed_values', {})
+                knn_rows = []
                 
                 if knn_imputed:
-                    with st.expander(f"🔮 KNN Predicted Values ({len(knn_imputed)} features)", expanded=False):
-                        st.markdown("*These values were predicted by the KNN imputer (k=5, distance-weighted) based on similar conditions in the training data (~50,000 samples):*")
-                        
-                        knn_rows = []
-                        for param, value in knn_imputed.items():
-                            knn_rows.append({
-                                'Parameter': param,
-                                'KNN Predicted Value': format_value_no_units(param, value, use_imperial),
-                                'Source': 'KNN Imputer (k=5)'
-                            })
-                        
-                        if knn_rows:
+                    for param, value in knn_imputed.items():
+                        knn_rows.append({
+                            'Parameter': param,
+                            'KNN Predicted Value': format_value_no_units(param, value, use_imperial),
+                            'Source': 'KNN Imputer (k=5)'
+                        })
+                
+                if model_inputs or knn_rows:
+                    # Create tabs for Satellite and KNN values
+                    import pandas as pd
+                    
+                    tab_labels = []
+                    if model_inputs:
+                        tab_labels.append(f"📡 Satellite/API ({len(model_inputs)})")
+                    if knn_rows:
+                        tab_labels.append(f"🔮 KNN Calculated ({len(knn_rows)})")
+                    tab_labels.append("📋 All Combined")
+                    
+                    input_tabs = st.tabs(tab_labels)
+                    tab_idx = 0
+                    
+                    # Satellite/API Tab
+                    if model_inputs:
+                        with input_tabs[tab_idx]:
+                            st.markdown("*Values from satellite imagery and weather APIs:*")
+                            df = pd.DataFrame(model_inputs)
+                            st.dataframe(df, hide_index=True, use_container_width=True)
+                            
+                            # Generate copy-paste format: "param1 value1, param2 value2, ..."
+                            copy_text_satellite = ", ".join([f"{row['Parameter']} {row['Value']}" for row in model_inputs])
+                            st.code(copy_text_satellite, language=None)
+                            st.caption("👆 Click above to select, then copy (Ctrl+C)")
+                        tab_idx += 1
+                    
+                    # KNN Calculated Tab
+                    if knn_rows:
+                        with input_tabs[tab_idx]:
+                            st.markdown("*Values predicted by KNN imputer (k=5, distance-weighted) based on similar conditions in ~50,000 training samples:*")
                             knn_df = pd.DataFrame(knn_rows)
                             st.dataframe(knn_df, hide_index=True, use_container_width=True)
                             
@@ -8823,19 +8838,25 @@ else:
                             copy_text_knn = ", ".join([f"{row['Parameter']} {row['KNN Predicted Value']}" for row in knn_rows])
                             st.code(copy_text_knn, language=None)
                             st.caption(f"👆 Click above to select, then copy (Ctrl+C) · {len(knn_imputed)} of {knn_info.get('total_features', 38)} features imputed")
-                
-                # Combined copy button for ALL model inputs (satellite + KNN)
-                all_inputs = {}
-                for row in model_inputs:
-                    all_inputs[row['Parameter']] = row['Value']
-                for row in knn_rows if knn_imputed else []:
-                    all_inputs[row['Parameter']] = row['KNN Predicted Value']
-                
-                if all_inputs:
-                    st.markdown("**📋 All Model Inputs (Combined)**")
-                    copy_text_all = ", ".join([f"{param} {val}" for param, val in all_inputs.items()])
-                    st.code(copy_text_all, language=None)
-                    st.caption(f"👆 All {len(all_inputs)} features in copy-paste format")
+                        tab_idx += 1
+                    
+                    # Combined Tab
+                    with input_tabs[tab_idx]:
+                        st.markdown("*All model inputs combined (Satellite + KNN):*")
+                        all_inputs = {}
+                        for row in model_inputs:
+                            all_inputs[row['Parameter']] = row['Value']
+                        for row in knn_rows:
+                            all_inputs[row['Parameter']] = row['KNN Predicted Value']
+                        
+                        if all_inputs:
+                            all_rows = [{'Parameter': k, 'Value': v} for k, v in all_inputs.items()]
+                            all_df = pd.DataFrame(all_rows)
+                            st.dataframe(all_df, hide_index=True, use_container_width=True)
+                            
+                            copy_text_all = ", ".join([f"{param} {val}" for param, val in all_inputs.items()])
+                            st.code(copy_text_all, language=None)
+                            st.caption(f"👆 All {len(all_inputs)} features in copy-paste format")
                 
                 # Coordinate box for manual verification
                 st.markdown("---")
