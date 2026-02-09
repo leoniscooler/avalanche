@@ -9475,12 +9475,17 @@ if analysis_mode == "📍 Single Point":
                 
                 input_data = pd.DataFrame([input_values], columns=feature_names)
                 
-                # Create KNN imputer from training datasets (loaded from GitHub)
-                # This fills in missing features based on similar conditions in training data
-                knn_result = create_knn_imputer_from_datasets(feature_names)
+                # Use the EXPORTED scaler and imputer from the notebook (ensures identical preprocessing)
+                scaler_path = "scaler_reduced.joblib"
+                imputer_path = "imputer_reduced.joblib"
                 
-                if knn_result[0] is not None:
-                    knn_imputer, dataset_scaler, available_features = knn_result
+                if os.path.exists(scaler_path) and os.path.exists(imputer_path):
+                    # Load the exact scaler and imputer from notebook training
+                    dataset_scaler = joblib.load(scaler_path)
+                    knn_imputer = joblib.load(imputer_path)
+                    available_features = feature_names
+                    
+                    print(f"✅ Loaded exported scaler and KNN imputer from notebook")
                     
                     # Ensure input_data has all required features in the right order
                     input_aligned = pd.DataFrame(columns=available_features)
@@ -9506,7 +9511,6 @@ if analysis_mode == "📍 Single Point":
                         input_aligned[col] = (input_aligned[col] - mean) / scale
                     
                     # Apply KNN imputation (fills NaN based on 5 nearest neighbors in training data)
-                    # KNN works on the partially scaled data with NaN values
                     input_imputed = knn_imputer.transform(input_aligned.values)
                     
                     # The data is now fully scaled and imputed, ready for model
@@ -9515,19 +9519,15 @@ if analysis_mode == "📍 Single Point":
                     # Inverse transform to get imputed values in original scale for display
                     input_imputed_original = dataset_scaler.inverse_transform(input_imputed)
                     
-                    # Log how many features were imputed and store the values
-                    n_missing = len(missing_features)
-                    
                     # Track which features were imputed vs from satellite data
+                    n_missing = len(missing_features)
                     knn_imputed_values = {}
                     original_values = {}
                     for idx, col in enumerate(available_features):
                         imputed_val = input_imputed_original[0][idx]
                         if col in missing_features:
-                            # This feature was imputed by KNN
                             knn_imputed_values[col] = imputed_val
                         else:
-                            # This feature was provided - get original unscaled value
                             original_val = input_data[col].values[0] if col in input_data.columns else imputed_val
                             original_values[col] = original_val
                     
@@ -9539,6 +9539,7 @@ if analysis_mode == "📍 Single Point":
                         'original_values': original_values,
                         'feature_names': available_features
                     }
+                    
                 else:
                     # Fallback: try to load saved imputer/scaler if KNN from datasets failed
                     scaler_path = "scaler_reduced.joblib"
