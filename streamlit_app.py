@@ -8792,6 +8792,12 @@ else:
                 knn_imputed = knn_info.get('knn_imputed_values', {})
                 knn_rows = []
                 
+                # Debug: show KNN info status
+                if knn_info:
+                    st.caption(f"🔍 Debug: KNN info found - {knn_info.get('features_imputed', 0)} features imputed, {len(knn_imputed)} values in dict")
+                else:
+                    st.caption("🔍 Debug: No KNN imputation info found in session state")
+                
                 if knn_imputed:
                     for param, value in knn_imputed.items():
                         knn_rows.append({
@@ -9530,6 +9536,10 @@ if analysis_mode == "📍 Single Point":
                     provided_features = [col for col in input_data.columns if col in available_features and not pd.isna(input_data[col].values[0])]
                     missing_features = [col for col in available_features if col not in provided_features]
                     
+                    print(f"📊 Feature tracking: {len(provided_features)} provided, {len(missing_features)} to impute")
+                    print(f"   Provided: {provided_features}")
+                    print(f"   Missing: {missing_features[:5]}..." if len(missing_features) > 5 else f"   Missing: {missing_features}")
+                    
                     # CRITICAL: Match notebook's preprocessing exactly
                     # Scale ONLY the provided features, leave NaN as NaN
                     for col in provided_features:
@@ -9559,6 +9569,8 @@ if analysis_mode == "📍 Single Point":
                             original_val = input_data[col].values[0] if col in input_data.columns else imputed_val
                             original_values[col] = original_val
                     
+                    print(f"📊 KNN imputation result: {len(knn_imputed_values)} values imputed")
+                    
                     st.session_state.knn_imputation_info = {
                         'features_imputed': int(n_missing),
                         'total_features': len(available_features),
@@ -9576,8 +9588,37 @@ if analysis_mode == "📍 Single Point":
                     if os.path.exists(scaler_path) and os.path.exists(imputer_path):
                         scaler = joblib.load(scaler_path)
                         imputer = joblib.load(imputer_path)
+                        available_features = feature_names
+                        
+                        # Track which features were provided vs need imputation
+                        provided_features = [col for col in input_data.columns if col in available_features and not pd.isna(input_data[col].values[0])]
+                        missing_features = [col for col in available_features if col not in provided_features]
+                        
                         input_imputed = imputer.transform(input_data)
                         input_scaled = scaler.transform(input_imputed)
+                        
+                        # Inverse transform to get imputed values in original scale
+                        input_imputed_original = scaler.inverse_transform(input_scaled)
+                        
+                        # Track KNN imputed values
+                        knn_imputed_values = {}
+                        original_values = {}
+                        for idx, col in enumerate(available_features):
+                            imputed_val = input_imputed_original[0][idx]
+                            if col in missing_features:
+                                knn_imputed_values[col] = imputed_val
+                            else:
+                                original_val = input_data[col].values[0] if col in input_data.columns else imputed_val
+                                original_values[col] = original_val
+                        
+                        st.session_state.knn_imputation_info = {
+                            'features_imputed': len(missing_features),
+                            'total_features': len(available_features),
+                            'features_from_satellite': len(provided_features),
+                            'knn_imputed_values': knn_imputed_values,
+                            'original_values': original_values,
+                            'feature_names': available_features
+                        }
                     else:
                         raise ValueError("Could not load KNN imputer from datasets or saved files")
                 
