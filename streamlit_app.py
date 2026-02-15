@@ -7170,6 +7170,13 @@ if analysis_mode == "🗺️ Route Analysis":
                 </div>
                 """, unsafe_allow_html=True)
                 
+                # Verification link for wind data
+                st.markdown(f"""
+                <div style="background: #f0fdf4; border: 1px solid #dcfce7; border-radius: 6px; padding: 0.75rem; margin-bottom: 1rem; font-size: 0.85rem;">
+                    🔗 <a href="https://api.open-meteo.com/v1/forecast?latitude={start_wp['latitude']}&longitude={start_wp['longitude']}&current=wind_speed_10m,wind_direction_10m,wind_gusts_10m&hourly=wind_speed_10m,wind_direction_10m,wind_gusts_10m&timezone=auto" target="_blank" style="color: #059669;">Verify wind data from Open-Meteo API</a>
+                </div>
+                """, unsafe_allow_html=True)
+                
                 col1, col2 = st.columns(2)
                 with col1:
                     st.markdown("**🔴 Avoid (Wind Loaded):**")
@@ -8064,6 +8071,13 @@ else:
                     <span style="font-size: 0.9rem; color: #6b7280;">
                         Wind from {wind_analysis.get('wind_direction_cardinal', 'N/A')} ({wind_analysis.get('wind_direction', 0)}°)
                     </span>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                # Verification link for wind data
+                st.markdown(f"""
+                <div style="background: #f0fdf4; border: 1px solid #dcfce7; border-radius: 6px; padding: 0.75rem; margin-bottom: 1rem; font-size: 0.85rem;">
+                    🔗 <a href="https://api.open-meteo.com/v1/forecast?latitude={wind_loc['latitude']}&longitude={wind_loc['longitude']}&current=wind_speed_10m,wind_direction_10m,wind_gusts_10m&hourly=wind_speed_10m,wind_direction_10m,wind_gusts_10m&timezone=auto" target="_blank" style="color: #059669;">Verify wind data from Open-Meteo API</a>
                 </div>
                 """, unsafe_allow_html=True)
                 
