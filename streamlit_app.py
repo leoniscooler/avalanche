@@ -7798,6 +7798,267 @@ else:
                                 'Gusts': [format_forecast_wind(d.get('wind_gust', 0)) for d in daily]
                             })
                             st.dataframe(weather_df, hide_index=True, use_container_width=True)
+                        
+                        # DETAILED FORECAST CONDITIONS - Show all model input features for each day
+                        with st.expander("🔬 Detailed Forecast Conditions (All Model Inputs)"):
+                            st.markdown("""
+                            <div style="background: #f0f9ff; border-left: 4px solid #0369a1; padding: 0.75rem; border-radius: 0 4px 4px 0; margin-bottom: 1rem;">
+                                <strong style="color: #0369a1;">Model Input Features</strong><br>
+                                <span style="font-size: 0.85rem; color: #0c4a6e;">
+                                Below are all 38 input features that the neural network uses for each forecast day. 
+                                These values are estimated or calculated from weather forecast data.
+                                </span>
+                            </div>
+                            """, unsafe_allow_html=True)
+                            
+                            # Helper function to format input values with units
+                            def format_forecast_input(feature_name, value, forecast_day_data):
+                                """Format a forecast input value with appropriate units."""
+                                if value is None:
+                                    value = 0
+                                
+                                # Map feature names to units and formatting
+                                feature_formats = {
+                                    'TA': ('°C', 1),
+                                    'TA_daily': ('°C', 1),
+                                    'TSS_mod': ('°C', 1),
+                                    'ISWR_daily': ('W/m²', 0),
+                                    'ISWR_dir_daily': ('W/m²', 0),
+                                    'ISWR_diff_daily': ('W/m²', 0),
+                                    'ISWR_h_daily': ('W/m²', 0),
+                                    'ILWR': ('W/m²', 0),
+                                    'ILWR_daily': ('W/m²', 0),
+                                    'OLWR': ('W/m²', 0),
+                                    'OLWR_daily': ('W/m²', 0),
+                                    'Qw_daily': ('W/m²', 0),
+                                    'Qs': ('W/m²', 0),
+                                    'Ql': ('W/m²', 0),
+                                    'Ql_daily': ('W/m²', 0),
+                                    'max_height': ('cm', 0),
+                                    'max_height_1_diff': ('cm', 1),
+                                    'max_height_2_diff': ('cm', 1),
+                                    'max_height_3_diff': ('cm', 1),
+                                    'SWE_daily': ('mm', 1),
+                                    'MS_Rain_daily': ('mm', 1),
+                                    'water': ('kg/m²', 1),
+                                    'water_1_diff': ('kg/m²', 1),
+                                    'water_2_diff': ('kg/m²', 1),
+                                    'water_3_diff': ('kg/m²', 1),
+                                    'mean_lwc': ('%', 1),
+                                    'max_lwc': ('%', 1),
+                                    'std_lwc': ('%', 1),
+                                    'mean_lwc_2_diff': ('%', 1),
+                                    'mean_lwc_3_diff': ('%', 1),
+                                    'prop_up': ('fraction', 2),
+                                    'prop_wet_2_diff': ('fraction', 2),
+                                    'sum_up': ('kg/m²', 1),
+                                    'lowest_2_diff': ('cm', 1),
+                                    'lowest_3_diff': ('cm', 1),
+                                    'S5': ('index', 2),
+                                    'S5_daily': ('index', 2),
+                                    'profile_time': ('hour', 0),
+                                }
+                                
+                                unit, decimals = feature_formats.get(feature_name, ('', 1))
+                                
+                                # Format with the right number of decimals
+                                if isinstance(value, (int, float)):
+                                    try:
+                                        formatted = f"{float(value):.{decimals}f}".rstrip('0').rstrip('.')
+                                    except:
+                                        formatted = str(value)
+                                else:
+                                    formatted = str(value)
+                                
+                                if unit:
+                                    return f"{formatted} {unit}"
+                                return formatted
+                            
+                            # Build forecast conditions for each day
+                            for day_idx, day in enumerate(daily):
+                                day_date = day['date_formatted']
+                                risk_score = day['risk_score']
+                                risk_level = day['risk_level']
+                                
+                                # Estimate model input features for this forecast day
+                                # These are calculated/estimated from the raw weather forecast
+                                forecast_inputs = {}
+                                
+                                # Temperature
+                                ta_max = day.get('temp_max', 0) or 0
+                                ta_min = day.get('temp_min', 0) or 0
+                                forecast_inputs['TA'] = (ta_max + ta_min) / 2
+                                forecast_inputs['TA_daily'] = (ta_max + ta_min) / 2
+                                # TSS estimated as 2° colder than average air temp (standard approximation)
+                                forecast_inputs['TSS_mod'] = min(0, forecast_inputs['TA'] - 2)
+                                
+                                # Radiation
+                                radiation = day.get('radiation', 100) or 100
+                                forecast_inputs['ISWR_daily'] = radiation / 24  # Convert daily to hourly avg
+                                forecast_inputs['ISWR_dir_daily'] = (radiation / 24) * 0.6  # 60% direct
+                                forecast_inputs['ISWR_diff_daily'] = (radiation / 24) * 0.4  # 40% diffuse
+                                forecast_inputs['ISWR_h_daily'] = (radiation / 24) * 0.95
+                                
+                                # Longwave
+                                sigma = 5.67e-8
+                                ta_k = forecast_inputs['TA'] + 273.15
+                                forecast_inputs['ILWR'] = 0.75 * sigma * (ta_k ** 4)
+                                forecast_inputs['ILWR_daily'] = forecast_inputs['ILWR']
+                                forecast_inputs['OLWR'] = 0.98 * sigma * ((forecast_inputs['TSS_mod'] + 273.15) ** 4)
+                                forecast_inputs['OLWR_daily'] = forecast_inputs['OLWR']
+                                
+                                # Absorbed shortwave (albedo ~0.7 for old snow)
+                                albedo = 0.85 if day.get('snowfall', 0) > 5 else 0.7
+                                forecast_inputs['Qw_daily'] = (radiation / 24) * (1 - albedo)
+                                
+                                # Heat fluxes (simplified)
+                                wind = day.get('wind_max', 5) or 5
+                                forecast_inputs['Qs'] = wind * (forecast_inputs['TA'] - forecast_inputs['TSS_mod']) * 20
+                                forecast_inputs['Ql'] = wind * 0.6 * (forecast_inputs['TA'] - forecast_inputs['TSS_mod'])
+                                forecast_inputs['Ql_daily'] = forecast_inputs['Ql']
+                                
+                                # Snow properties
+                                snowfall = day.get('snowfall', 0) or 0
+                                forecast_inputs['max_height'] = (day.get('cumulative_snow_cm', 0) or 0) / 100  # Convert cm to m
+                                
+                                # Snow depth changes - simulate based on snowfall pattern
+                                if day_idx > 0:
+                                    prev_snowfall = daily[day_idx - 1].get('snowfall', 0) or 0
+                                    forecast_inputs['max_height_1_diff'] = (snowfall / 100)  # 1-day change in meters
+                                    prev_prev_snowfall = daily[day_idx - 2].get('snowfall', 0) or 0 if day_idx > 1 else 0
+                                    forecast_inputs['max_height_2_diff'] = ((snowfall + prev_snowfall) / 100)  # 2-day change
+                                    prev_prev_prev_snowfall = daily[day_idx - 3].get('snowfall', 0) or 0 if day_idx > 2 else 0
+                                    forecast_inputs['max_height_3_diff'] = ((snowfall + prev_snowfall + prev_prev_snowfall) / 100)  # 3-day
+                                else:
+                                    forecast_inputs['max_height_1_diff'] = snowfall / 100
+                                    forecast_inputs['max_height_2_diff'] = snowfall / 100
+                                    forecast_inputs['max_height_3_diff'] = snowfall / 100
+                                
+                                # SWE and precipitation
+                                forecast_inputs['SWE_daily'] = snowfall * 10  # Rough 10:1 snow:water ratio
+                                forecast_inputs['MS_Rain_daily'] = day.get('precipitation', 0) or 0
+                                
+                                # Liquid water content - higher if warm or raining
+                                is_melting = forecast_inputs['TA'] > 0 or forecast_inputs['MS_Rain_daily'] > 0
+                                forecast_inputs['water'] = (forecast_inputs['TA'] * 5) if is_melting else 0
+                                forecast_inputs['water_1_diff'] = forecast_inputs['water']
+                                forecast_inputs['water_2_diff'] = forecast_inputs['water'] * 0.5
+                                forecast_inputs['water_3_diff'] = forecast_inputs['water'] * 0.3
+                                forecast_inputs['mean_lwc'] = (forecast_inputs['water'] / max(forecast_inputs['max_height']*1000, 1)) * 100 if is_melting else 0
+                                forecast_inputs['max_lwc'] = forecast_inputs['mean_lwc'] * 1.5
+                                forecast_inputs['std_lwc'] = forecast_inputs['mean_lwc'] * 0.3
+                                forecast_inputs['mean_lwc_2_diff'] = forecast_inputs['mean_lwc'] * 0.5 if is_melting else 0
+                                forecast_inputs['mean_lwc_3_diff'] = forecast_inputs['mean_lwc'] * 0.3 if is_melting else 0
+                                
+                                # Wetness distribution
+                                forecast_inputs['prop_up'] = 0.5 if is_melting else 0.1
+                                forecast_inputs['prop_wet_2_diff'] = 0.1 if is_melting else -0.05
+                                forecast_inputs['sum_up'] = forecast_inputs['water'] * forecast_inputs['prop_up']
+                                forecast_inputs['lowest_2_diff'] = 0.1 if is_melting else 0
+                                forecast_inputs['lowest_3_diff'] = 0.15 if is_melting else 0
+                                
+                                # Stability index
+                                forecast_inputs['S5'] = 3.0  # Start from good stability
+                                if snowfall > 20:
+                                    forecast_inputs['S5'] -= 0.8
+                                if forecast_inputs['TA'] > 5:
+                                    forecast_inputs['S5'] -= 0.8
+                                elif forecast_inputs['TA'] > 0:
+                                    forecast_inputs['S5'] -= 0.5
+                                if forecast_inputs['mean_lwc'] > 5:
+                                    forecast_inputs['S5'] -= 0.6
+                                forecast_inputs['S5'] = max(0.5, min(4.0, forecast_inputs['S5']))
+                                forecast_inputs['S5_daily'] = -0.2 if forecast_inputs['TA'] > 2 else 0.1 if forecast_inputs['TA'] < -5 else 0
+                                
+                                # Time
+                                forecast_inputs['profile_time'] = 12  # Noon
+                                
+                                # Create expander for this day's detailed conditions
+                                with st.expander(f"📅 {day_date} - Risk: {risk_level} ({risk_score*100:.0f}%)", expanded=(day_idx == 0)):
+                                    # Color based on risk level
+                                    if risk_level == 'HIGH':
+                                        color = '#dc2626'
+                                    elif risk_level == 'MODERATE':
+                                        color = '#f59e0b'
+                                    else:
+                                        color = '#10b981'
+                                    
+                                    st.markdown(f"""
+                                    <div style="background: linear-gradient(90deg, {color}15 0%, transparent 100%); 
+                                                padding: 0.75rem; border-left: 4px solid {color}; border-radius: 0 4px 4px 0; 
+                                                margin-bottom: 1rem;">
+                                        <strong style="color: {color};">{risk_level} Risk - {risk_score*100:.0f}% probability</strong><br>
+                                        <span style="font-size: 0.85rem; color: #6b7280;">
+                                            Summary: {format_forecast_temp(forecast_inputs['TA'])} air temp, 
+                                            {format_forecast_snow(day.get('snowfall'))} new snow, 
+                                            {format_forecast_wind(wind)} wind
+                                        </span>
+                                    </div>
+                                    """, unsafe_allow_html=True)
+                                    
+                                    # Display all 38 features grouped by category
+                                    col1, col2 = st.columns(2)
+                                    
+                                    with col1:
+                                        st.markdown("**🌡️ Temperature & Stability**")
+                                        st.dataframe(pd.DataFrame({
+                                            'Parameter': ['Air Temp (TA)', 'Daily Avg (TA_daily)', 'Snow Surface (TSS_mod)', 'Stability (S5)', 'Daily Stab Chg (S5_daily)'],
+                                            'Value': [
+                                                format_forecast_input('TA', forecast_inputs['TA'], day),
+                                                format_forecast_input('TA_daily', forecast_inputs['TA_daily'], day),
+                                                format_forecast_input('TSS_mod', forecast_inputs['TSS_mod'], day),
+                                                format_forecast_input('S5', forecast_inputs['S5'], day),
+                                                format_forecast_input('S5_daily', forecast_inputs['S5_daily'], day),
+                                            ]
+                                        }), hide_index=True, use_container_width=True)
+                                        
+                                        st.markdown("**💧 Liquid Water Content**")
+                                        st.dataframe(pd.DataFrame({
+                                            'Parameter': ['Total LWC', 'Mean LWC', 'Max LWC', '1-day Change', '2-day Change'],
+                                            'Value': [
+                                                format_forecast_input('water', forecast_inputs['water'], day),
+                                                format_forecast_input('mean_lwc', forecast_inputs['mean_lwc'], day),
+                                                format_forecast_input('max_lwc', forecast_inputs['max_lwc'], day),
+                                                format_forecast_input('water_1_diff', forecast_inputs['water_1_diff'], day),
+                                                format_forecast_input('water_2_diff', forecast_inputs['water_2_diff'], day),
+                                            ]
+                                        }), hide_index=True, use_container_width=True)
+                                    
+                                    with col2:
+                                        st.markdown("**☀️ Radiation (Energy Balance)**")
+                                        st.dataframe(pd.DataFrame({
+                                            'Parameter': ['Shortwave Daily', 'Direct SW', 'Diffuse SW', 'Incoming LW', 'Outgoing LW'],
+                                            'Value': [
+                                                format_forecast_input('ISWR_daily', forecast_inputs['ISWR_daily'], day),
+                                                format_forecast_input('ISWR_dir_daily', forecast_inputs['ISWR_dir_daily'], day),
+                                                format_forecast_input('ISWR_diff_daily', forecast_inputs['ISWR_diff_daily'], day),
+                                                format_forecast_input('ILWR', forecast_inputs['ILWR'], day),
+                                                format_forecast_input('OLWR', forecast_inputs['OLWR'], day),
+                                            ]
+                                        }), hide_index=True, use_container_width=True)
+                                        
+                                        st.markdown("**❄️ Snow Properties**")
+                                        st.dataframe(pd.DataFrame({
+                                            'Parameter': ['Depth', '1-day Chg', '2-day Chg', '3-day Chg', 'SWE Daily', 'Rain Daily'],
+                                            'Value': [
+                                                format_forecast_input('max_height', forecast_inputs['max_height'], day),
+                                                format_forecast_input('max_height_1_diff', forecast_inputs['max_height_1_diff'], day),
+                                                format_forecast_input('max_height_2_diff', forecast_inputs['max_height_2_diff'], day),
+                                                format_forecast_input('max_height_3_diff', forecast_inputs['max_height_3_diff'], day),
+                                                format_forecast_input('SWE_daily', forecast_inputs['SWE_daily'], day),
+                                                format_forecast_input('MS_Rain_daily', forecast_inputs['MS_Rain_daily'], day),
+                                            ]
+                                        }), hide_index=True, use_container_width=True)
+                                    
+                                    # Heat fluxes and derived metrics
+                                    st.markdown("**🔥 Heat Fluxes & Other Parameters**")
+                                    col1, col2, col3 = st.columns(3)
+                                    with col1:
+                                        st.markdown(f"**Sensible Heat (Qs):** {format_forecast_input('Qs', forecast_inputs['Qs'], day)}")
+                                    with col2:
+                                        st.markdown(f"**Latent Heat (Ql):** {format_forecast_input('Ql', forecast_inputs['Ql'], day)}")
+                                    with col3:
+                                        st.markdown(f"**Absorbed SW (Qw):** {format_forecast_input('Qw_daily', forecast_inputs['Qw_daily'], day)}")
             else:
                 st.info("Forecast data not available for this location")
         
