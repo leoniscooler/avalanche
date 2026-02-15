@@ -8021,15 +8021,20 @@ else:
                                     
                                     # Copy-paste friendly format
                                     with st.expander("📋 Copy Raw Values (for verification)", expanded=False):
-                                        copy_text = f"""Date: {day['date']}
-Temperature Max: {day.get('temp_max', 0):.2f}°C
-Temperature Min: {day.get('temp_min', 0):.2f}°C
-Precipitation: {day.get('precipitation', 0):.2f}mm
-Snowfall: {day.get('snowfall', 0):.2f}cm
-Wind Speed Max: {day.get('wind_max', 0):.2f}km/h
-Wind Gust Max: {day.get('wind_gust', 0):.2f}km/h
-Solar Radiation: {day.get('radiation', 0):.2f}MJ/m²
-Cumulative Snow: {day.get('cumulative_snow_cm', 0):.2f}cm"""
+                                        # Format all key features as "NAME VALUE, NAME VALUE, ..."
+                                        feature_pairs = []
+                                        key_features = ['TA', 'TA_daily', 'ISWR_daily', 'ISWR_dir_daily', 'ISWR_diff_daily', 
+                                                      'ILWR_daily', 'max_height', 'SWE_daily', 'MS_Rain_daily', 'pAlbedo',
+                                                      'Qs', 'Ql', 'water', 'max_lwc', 'S5']
+                                        
+                                        for feature in key_features:
+                                            if feature in forecast_inputs:
+                                                value = forecast_inputs[feature]
+                                                if isinstance(value, (list, np.ndarray)):
+                                                    value = value[day_idx] if day_idx < len(value) else 0
+                                                feature_pairs.append(f"{feature} {float(value):.4f}")
+                                        
+                                        copy_text = ", ".join(feature_pairs)
                                         st.code(copy_text, language="text")
                                         st.caption("👆 Copy this text and paste into a spreadsheet or verify against API response")
                                     
