@@ -5937,7 +5937,7 @@ def build_avalanche_context(results, env_data, wind_results, location, user_prof
 def ask_avalanche_ai(question, results, env_data, wind_results, location, user_profile=None, forecast_data=None):
     """
     Use AI to answer avalanche-related questions with full context.
-    Uses the Pollinations AI API.
+    Uses free, no-API-key AI services with automatic fallback.
     Includes current conditions, 7-day forecast, and model predictions.
     """
     import requests
@@ -5958,6 +5958,7 @@ def ask_avalanche_ai(question, results, env_data, wind_results, location, user_p
 4. Use the exact numbers and measurements from the data
 5. Consider the user's experience level and gear if provided
 6. Always err on the side of caution
+7. When asked about the forecast, reference the specific day-by-day predictions provided
 
 Response format:
 - Keep answers concise but complete (2-4 sentences for simple questions, more for complex ones)
@@ -5965,6 +5966,7 @@ Response format:
 - Start with a direct answer, then provide supporting details
 - If conditions are dangerous, say so clearly
 - Include specific numbers from the data (temperatures, percentages, aspects, etc.)
+- When discussing forecast, mention specific dates and risk levels
 
 DO NOT:
 - Make up data that isn't provided
@@ -5981,6 +5983,10 @@ USER QUESTION: {question}
 
 Provide a helpful, accurate answer based on the data above."""
     
+    # Try multiple free AI APIs in order of reliability
+    answer = None
+    
+    # --- Attempt 1: Pollinations AI (free, no key needed) ---
     try:
         response = requests.post(
             'https://text.pollinations.ai/openai/v1/chat/completions',
@@ -5996,38 +6002,110 @@ Provide a helpful, accurate answer based on the data above."""
             },
             timeout=30
         )
-        
         if response.status_code == 200:
             data = response.json()
             answer = data['choices'][0]['message']['content']
+    except Exception:
+        pass
+    
+    # --- Attempt 2: Pollinations text endpoint (simpler format) ---
+    if not answer:
+        try:
+            full_prompt = f"{system_prompt}\n\n{user_message}"
+            response = requests.post(
+                'https://text.pollinations.ai/',
+                headers={'Content-Type': 'application/json'},
+                json={
+                    'messages': [
+                        {'role': 'system', 'content': system_prompt},
+                        {'role': 'user', 'content': user_message}
+                    ],
+                    'model': 'mistral',
+                    'seed': 42
+                },
+                timeout=30
+            )
+            if response.status_code == 200:
+                answer = response.text.strip()
+                # Strip any markdown code fences the model might add
+                if answer.startswith('```'):
+                    answer = answer.split('\n', 1)[-1]
+                if answer.endswith('```'):
+                    answer = answer.rsplit('```', 1)[0]
+        except Exception:
+            pass
+    
+    # --- Attempt 3: DuckDuckGo AI Chat (free, no key) ---
+    if not answer:
+        try:
+            # First get a vqd token
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Accept': 'text/event-stream',
+                'x-vqd-accept': '1'
+            }
+            status_resp = requests.get('https://duckduckgo.com/duckchat/v1/status', headers=headers, timeout=10)
+            vqd_token = status_resp.headers.get('x-vqd-4', '')
             
-            # Determine answer type based on content and risk level
-            prob = results.get('avalanche_probability', 0)
-            answer_lower = answer.lower()
-            
-            if any(word in answer_lower for word in ['no-go', 'do not', 'avoid', 'dangerous', 'high risk', 'extreme']):
-                answer_type = 'error'
-            elif any(word in answer_lower for word in ['caution', 'careful', 'moderate risk', 'watch', 'warning']):
-                answer_type = 'warning'
-            elif any(word in answer_lower for word in ['favorable', 'lower risk', 'safer', 'acceptable', 'good']):
-                answer_type = 'success'
-            elif prob >= 0.6:
-                answer_type = 'error'
-            elif prob >= 0.35:
-                answer_type = 'warning'
-            else:
-                answer_type = 'info'
-            
-            return answer, answer_type
-        else:
-            return f"AI service temporarily unavailable (Status: {response.status_code}). Please try again.", "warning"
-            
-    except requests.exceptions.Timeout:
-        return "Request timed out. The AI service is slow - please try again.", "warning"
-    except requests.exceptions.RequestException as e:
-        return f"Connection error: Unable to reach AI service. Check your internet connection.", "warning"
-    except Exception as e:
-        return f"An error occurred: {str(e)}", "warning"
+            if vqd_token:
+                chat_headers = {
+                    'Content-Type': 'application/json',
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                    'Accept': 'text/event-stream',
+                    'x-vqd-4': vqd_token
+                }
+                chat_payload = {
+                    'model': 'mistralai/mixtral-8x7b-instruct',
+                    'messages': [
+                        {'role': 'user', 'content': f"{system_prompt}\n\n{user_message}"}
+                    ]
+                }
+                chat_resp = requests.post(
+                    'https://duckduckgo.com/duckchat/v1/chat',
+                    headers=chat_headers,
+                    json=chat_payload,
+                    timeout=30
+                )
+                if chat_resp.status_code == 200:
+                    # Parse SSE response
+                    full_text = []
+                    for line in chat_resp.text.split('\n'):
+                        if line.startswith('data: '):
+                            chunk = line[6:].strip()
+                            if chunk and chunk != '[DONE]':
+                                try:
+                                    chunk_data = json.loads(chunk)
+                                    if 'message' in chunk_data:
+                                        full_text.append(chunk_data['message'])
+                                except json.JSONDecodeError:
+                                    pass
+                    if full_text:
+                        answer = ''.join(full_text)
+        except Exception:
+            pass
+    
+    # If all APIs failed, return error
+    if not answer:
+        return "AI service temporarily unavailable. All free AI endpoints are down - please try again in a moment.", "warning"
+    
+    # Determine answer type based on content and risk level
+    prob = results.get('avalanche_probability', 0)
+    answer_lower = answer.lower()
+    
+    if any(word in answer_lower for word in ['no-go', 'do not', 'avoid', 'dangerous', 'high risk', 'extreme']):
+        answer_type = 'error'
+    elif any(word in answer_lower for word in ['caution', 'careful', 'moderate risk', 'watch', 'warning']):
+        answer_type = 'warning'
+    elif any(word in answer_lower for word in ['favorable', 'lower risk', 'safer', 'acceptable', 'good']):
+        answer_type = 'success'
+    elif prob >= 0.6:
+        answer_type = 'error'
+    elif prob >= 0.35:
+        answer_type = 'warning'
+    else:
+        answer_type = 'info'
+    
+    return answer, answer_type
 
 
 # Legacy function for backward compatibility (simplified fallback)
