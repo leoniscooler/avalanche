@@ -7799,6 +7799,20 @@ else:
                             })
                             st.dataframe(weather_df, hide_index=True, use_container_width=True)
                         
+                        # DATA SOURCE HEADER
+                        forecast_loc = results.get('location', st.session_state.location)
+                        if forecast_loc:
+                            st.markdown(f"""
+                            <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 1rem; margin-bottom: 1rem;">
+                                <strong>🔍 7-Day Forecast Data Sources & Verification</strong><br>
+                                <span style="font-size: 0.85rem; color: #64748b;">
+                                    📍 Location: {forecast_loc['latitude']:.4f}°N, {forecast_loc['longitude']:.4f}°E<br>
+                                    🌐 Data Source: Open-Meteo Forecast API (free, open data)<br>
+                                    🔗 <a href="https://api.open-meteo.com/v1/forecast?latitude={forecast_loc['latitude']}&longitude={forecast_loc['longitude']}&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,snowfall_sum,wind_speed_10m_max,wind_gusts_10m_max,shortwave_radiation_sum&timezone=auto" target="_blank">Verify raw forecast data</a>
+                                </span>
+                            </div>
+                            """, unsafe_allow_html=True)
+                        
                         # DETAILED FORECAST CONDITIONS - Show all model input features for each day
                         with st.expander("🔬 Detailed Forecast Conditions (All Model Inputs)"):
                             st.markdown("""
@@ -7806,7 +7820,7 @@ else:
                                 <strong style="color: #0369a1;">Model Input Features</strong><br>
                                 <span style="font-size: 0.85rem; color: #0c4a6e;">
                                 Below are all 38 input features that the neural network uses for each forecast day. 
-                                These values are estimated or calculated from weather forecast data.
+                                Values are estimated or calculated from Open-Meteo forecast data using physics-based models.
                                 </span>
                             </div>
                             """, unsafe_allow_html=True)
@@ -7989,12 +8003,35 @@ else:
                                                 margin-bottom: 1rem;">
                                         <strong style="color: {color};">{risk_level} Risk - {risk_score*100:.0f}% probability</strong><br>
                                         <span style="font-size: 0.85rem; color: #6b7280;">
-                                            Summary: {format_forecast_temp(forecast_inputs['TA'])} air temp, 
-                                            {format_forecast_snow(day.get('snowfall'))} new snow, 
-                                            {format_forecast_wind(wind)} wind
+                                            📡 Data from: Open-Meteo Forecast API | 
+                                            <a href="https://api.open-meteo.com/v1/forecast?latitude={forecast_loc['latitude']}&longitude={forecast_loc['longitude']}&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,snowfall_sum,wind_speed_10m_max,wind_gusts_10m_max,shortwave_radiation_sum&timezone=auto" target="_blank" style="color: #0369a1;">🔗 Verify</a>
                                         </span>
                                     </div>
                                     """, unsafe_allow_html=True)
+                                    
+                                    # RAW DATA SECTION - Show the original forecast values
+                                    st.markdown("**📊 Raw Forecast Data**")
+                                    raw_data_cols = st.columns(3)
+                                    with raw_data_cols[0]:
+                                        st.markdown(f"**Temperature**<br>`High: {day.get('temp_max', 0):.1f}°C`<br>`Low: {day.get('temp_min', 0):.1f}°C`", unsafe_allow_html=True)
+                                    with raw_data_cols[1]:
+                                        st.markdown(f"**Precipitation**<br>`Rain: {day.get('precipitation', 0):.1f}mm`<br>`Snow: {day.get('snowfall', 0):.1f}cm`", unsafe_allow_html=True)
+                                    with raw_data_cols[2]:
+                                        st.markdown(f"**Wind**<br>`Max: {day.get('wind_max', 0):.1f}km/h`<br>`Gust: {day.get('wind_gust', 0):.1f}km/h`", unsafe_allow_html=True)
+                                    
+                                    # Copy-paste friendly format
+                                    with st.expander("📋 Copy Raw Values (for verification)", expanded=False):
+                                        copy_text = f"""Date: {day['date']}
+Temperature Max: {day.get('temp_max', 0):.2f}°C
+Temperature Min: {day.get('temp_min', 0):.2f}°C
+Precipitation: {day.get('precipitation', 0):.2f}mm
+Snowfall: {day.get('snowfall', 0):.2f}cm
+Wind Speed Max: {day.get('wind_max', 0):.2f}km/h
+Wind Gust Max: {day.get('wind_gust', 0):.2f}km/h
+Solar Radiation: {day.get('radiation', 0):.2f}MJ/m²
+Cumulative Snow: {day.get('cumulative_snow_cm', 0):.2f}cm"""
+                                        st.code(copy_text, language="text")
+                                        st.caption("👆 Copy this text and paste into a spreadsheet or verify against API response")
                                     
                                     # Display all 38 features grouped by category
                                     col1, col2 = st.columns(2)
@@ -8059,6 +8096,23 @@ else:
                                         st.markdown(f"**Latent Heat (Ql):** {format_forecast_input('Ql', forecast_inputs['Ql'], day)}")
                                     with col3:
                                         st.markdown(f"**Absorbed SW (Qw):** {format_forecast_input('Qw_daily', forecast_inputs['Qw_daily'], day)}")
+                                    
+                                    # Data source info for this day
+                                    st.markdown("---")
+                                    st.markdown("""
+                                    <div style="background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; padding: 0.75rem; font-size: 0.85rem;">
+                                        <strong>📡 Data Sources & Calculation Methods:</strong><br>
+                                        • <strong>Temperature & Radiation:</strong> Open-Meteo Forecast API<br>
+                                        • <strong>Heat Fluxes (Qs, Ql):</strong> Calculated using bulk aerodynamic formulas from temperature and wind<br>
+                                        • <strong>Snow Surface Temp (TSS_mod):</strong> Estimated using Stefan-Boltzmann law from outgoing radiation<br>
+                                        • <strong>Liquid Water Content:</strong> Calculated from temperature and solar radiation using degree-day model<br>
+                                        • <strong>Stability Index (S5):</strong> Multi-factor model based on new snow, temperature, wind, and LWC<br>
+                                        <br>
+                                        <a href="https://api.open-meteo.com/v1/forecast?latitude={forecast_loc['latitude']}&longitude={forecast_loc['longitude']}&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,snowfall_sum,wind_speed_10m_max,wind_gusts_10m_max,shortwave_radiation_sum&timezone=auto" target="_blank" style="color: #0369a1; text-decoration: none;">
+                                            🔗 Click to verify raw forecast data in browser
+                                        </a>
+                                    </div>
+                                    """, unsafe_allow_html=True)
             else:
                 st.info("Forecast data not available for this location")
         
