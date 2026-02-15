@@ -8037,22 +8037,6 @@ else:
                                         copy_text = ", ".join(feature_pairs)
                                         st.code(copy_text, language="text")
                                         st.caption("👆 Copy this text and paste into a spreadsheet or verify against API response")
-                                    # Data source info for this day
-                                    st.markdown("---")
-                                    st.markdown("""
-                                    <div style="background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; padding: 0.75rem; font-size: 0.85rem;">
-                                        <strong>📡 Data Sources & Calculation Methods:</strong><br>
-                                        • <strong>Temperature & Radiation:</strong> Open-Meteo Forecast API<br>
-                                        • <strong>Heat Fluxes (Qs, Ql):</strong> Calculated using bulk aerodynamic formulas from temperature and wind<br>
-                                        • <strong>Snow Surface Temp (TSS_mod):</strong> Estimated using Stefan-Boltzmann law from outgoing radiation<br>
-                                        • <strong>Liquid Water Content:</strong> Calculated from temperature and solar radiation using degree-day model<br>
-                                        • <strong>Stability Index (S5):</strong> Multi-factor model based on new snow, temperature, wind, and LWC<br>
-                                        <br>
-                                        <a href="https://api.open-meteo.com/v1/forecast?latitude={forecast_loc['latitude']}&longitude={forecast_loc['longitude']}&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,snowfall_sum,wind_speed_10m_max,wind_gusts_10m_max,shortwave_radiation_sum&timezone=auto" target="_blank" style="color: #0369a1; text-decoration: none;">
-                                            🔗 Click to verify raw forecast data in browser
-                                        </a>
-                                    </div>
-                                    """, unsafe_allow_html=True)
             else:
                 st.info("Forecast data not available for this location")
         
