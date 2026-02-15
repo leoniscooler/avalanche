@@ -5836,9 +5836,10 @@ def generate_personalized_recommendation(results, env_data, wind_results, profil
 # ============================================
 # NATURAL LANGUAGE Q&A SYSTEM (AI-POWERED)
 # ============================================
-def build_avalanche_context(results, env_data, wind_results, location, user_profile=None):
+def build_avalanche_context(results, env_data, wind_results, location, user_profile=None, forecast_data=None):
     """
     Build a comprehensive context string with all avalanche data for the AI.
+    Includes current conditions, 7-day forecast, and predictions.
     """
     context_parts = []
     
@@ -5896,6 +5897,28 @@ def build_avalanche_context(results, env_data, wind_results, location, user_prof
 - Safer (Windward) Aspects: {', '.join(wa.get('safe_aspects', [])) or 'All similar'}
 - Recommendations: {'; '.join(wa.get('recommendations', [])[:3])}""")
     
+    # 7-day forecast and predictions
+    if forecast_data:
+        forecast_str = "7-DAY FORECAST & PREDICTIONS:\n"
+        daily_forecasts = forecast_data.get('daily', [])
+        for day_idx, day in enumerate(daily_forecasts[:7], 1):
+            risk = day.get('risk_level', 'Unknown')
+            prob_day = day.get('risk_score', 0.5)
+            date = day.get('date', 'N/A')
+            temp_high = day.get('temp_max', 0)
+            temp_low = day.get('temp_min', 0)
+            precip = day.get('precipitation', 0)
+            snowfall = day.get('snowfall', 0)
+            wind_max = day.get('wind_max', 0)
+            
+            forecast_str += f"\nDay {day_idx} ({date}):\n"
+            forecast_str += f"  Risk: {risk} ({prob_day*100:.0f}% probability)\n"
+            forecast_str += f"  Temp: {temp_high:.0f}°C to {temp_low:.0f}°C\n"
+            forecast_str += f"  Precipitation: {precip:.1f}mm, Snowfall: {snowfall:.1f}cm\n"
+            forecast_str += f"  Wind: {wind_max:.1f}km/h"
+        
+        context_parts.append(forecast_str)
+    
     # User profile if available
     if user_profile and user_profile.get('profile_set'):
         context_parts.append(f"""USER PROFILE:
@@ -5911,10 +5934,11 @@ def build_avalanche_context(results, env_data, wind_results, location, user_prof
     return "\n\n".join(context_parts)
 
 
-def ask_avalanche_ai(question, results, env_data, wind_results, location, user_profile=None):
+def ask_avalanche_ai(question, results, env_data, wind_results, location, user_profile=None, forecast_data=None):
     """
     Use AI to answer avalanche-related questions with full context.
     Uses the Pollinations AI API.
+    Includes current conditions, 7-day forecast, and model predictions.
     """
     import requests
     import json
@@ -5922,8 +5946,8 @@ def ask_avalanche_ai(question, results, env_data, wind_results, location, user_p
     if not results:
         return "Please run an assessment first to get answers about current conditions.", "info"
     
-    # Build context with all available data
-    data_context = build_avalanche_context(results, env_data, wind_results, location, user_profile)
+    # Build context with all available data including forecast
+    data_context = build_avalanche_context(results, env_data, wind_results, location, user_profile, forecast_data)
     
     # System prompt for the AI
     system_prompt = """You are an expert avalanche safety advisor and backcountry guide. You have access to real-time avalanche assessment data for a specific location. Your role is to:
@@ -6011,7 +6035,7 @@ def process_avalanche_question(question, results, env_data, wind_results, locati
     """
     Fallback function - redirects to AI-powered response.
     """
-    return ask_avalanche_ai(question, results, env_data, wind_results, location)
+    return ask_avalanche_ai(question, results, env_data, wind_results, location, forecast_data=forecast_data)
     
     # Wind questions
     if any(word in question_lower for word in ['wind', 'loading', 'blown', 'drift']):
@@ -7004,7 +7028,8 @@ if analysis_mode == "🗺️ Route Analysis":
                         st.session_state.get('env_data'),
                         {'wind_analysis': wind_analysis} if start_wp and wind_data.get('available') else None,
                         route_loc,
-                        st.session_state.user_profile
+                        st.session_state.user_profile,
+                        forecast_data=st.session_state.get('route_forecast')
                     )
                 
                 answer_html = convert_md_to_html_route(answer)
@@ -7100,6 +7125,7 @@ if analysis_mode == "🗺️ Route Analysis":
                 # For route analysis, use max risk score from route as current risk for day 1
                 route_max_risk = route_analysis.get('route_summary', {}).get('max_risk_score', None)
                 forecast = fetch_7day_forecast(route_loc['latitude'], route_loc['longitude'], 0, route_max_risk)
+                st.session_state.route_forecast = forecast  # Store forecast for AI context
                 
                 if forecast.get('available') and forecast.get('daily'):
                     chart_result = create_forecast_chart(forecast)
@@ -7573,7 +7599,8 @@ else:
                         st.session_state.env_data,
                         st.session_state.wind_loading_results,
                         loc,
-                        st.session_state.user_profile
+                        st.session_state.user_profile,
+                        forecast_data=st.session_state.get('forecast')
                     )
                 
                 answer_html = convert_md_to_html(answer)
@@ -7727,6 +7754,7 @@ else:
                 current_snow_depth = results.get('snow_depth', 0) or 0
                 current_ml_risk = results.get('avalanche_probability', None)  # ML model's prediction for today
                 forecast = fetch_7day_forecast(forecast_loc['latitude'], forecast_loc['longitude'], current_snow_depth, current_ml_risk)
+                st.session_state.forecast = forecast  # Store forecast for AI context
                 
                 if forecast.get('available') and forecast.get('daily'):
                     chart_result = create_forecast_chart(forecast)
