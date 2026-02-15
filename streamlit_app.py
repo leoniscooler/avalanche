@@ -7799,20 +7799,6 @@ else:
                             })
                             st.dataframe(weather_df, hide_index=True, use_container_width=True)
                         
-                        # DATA SOURCE HEADER
-                        forecast_loc = results.get('location', st.session_state.location)
-                        if forecast_loc:
-                            st.markdown(f"""
-                            <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 1rem; margin-bottom: 1rem;">
-                                <strong>🔍 7-Day Forecast Data Sources & Verification</strong><br>
-                                <span style="font-size: 0.85rem; color: #64748b;">
-                                    📍 Location: {forecast_loc['latitude']:.4f}°N, {forecast_loc['longitude']:.4f}°E<br>
-                                    🌐 Data Source: Open-Meteo Forecast API (free, open data)<br>
-                                    🔗 <a href="https://api.open-meteo.com/v1/forecast?latitude={forecast_loc['latitude']}&longitude={forecast_loc['longitude']}&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,snowfall_sum,wind_speed_10m_max,wind_gusts_10m_max,shortwave_radiation_sum&timezone=auto" target="_blank">Verify raw forecast data</a>
-                                </span>
-                            </div>
-                            """, unsafe_allow_html=True)
-                        
                         # DETAILED FORECAST CONDITIONS - Show all model input features for each day
                         with st.expander("🔬 Detailed Forecast Conditions (All Model Inputs)"):
                             st.markdown("""
