@@ -9782,58 +9782,12 @@ if analysis_mode == "📍 Single Point":
         status_text.empty()
         
         # Prepare input data from satellite data (using NaN for missing values instead of 0)
-        # CRITICAL FIX: Only provide features that come from REAL data sources (API/satellite/station)
-        # Let KNN impute all calculated/derived/physics-estimated features so they match training data
         if st.session_state.env_data:
-            # Build a lookup of which features came from calculated sources
-            calculated_source_keywords = [
-                'calculated', 'physics', 'default', 'derived', 
-                'estimated', 'stefan-boltzmann', 'bulk aerodynamic',
-                'degree-day', 'multi-factor', 'system'
-            ]
-            
-            # Map feature -> source from data_sources_used
-            feature_source_map = {}
-            if st.session_state.data_sources:
-                for param, source in st.session_state.data_sources:
-                    feature_source_map[param] = source
-            
-            # Features that are DIRECTLY measured by APIs/satellites/stations
-            # (not calculated using physics formulas in process_satellite_data)
-            DIRECTLY_OBSERVED_FEATURES = {
-                'TA',              # From weather stations / Open-Meteo
-                'TA_daily',        # From ERA5 / Open-Meteo daily average
-                'ISWR_daily',      # From GOES/CERES / ERA5 / Open-Meteo
-                'ISWR_dir_daily',  # From ERA5 (if actually from API)
-                'ISWR_diff_daily', # From ERA5 (if actually from API)
-                'ILWR_daily',      # From ERA5 (if actually from API)
-                'max_height',      # From SNODAS / SNOTEL / ERA5 snow depth
-                'max_height_1_diff', # From ERA5/Open-Meteo snow depth history
-                'max_height_2_diff',
-                'max_height_3_diff',
-                'SWE_daily',       # From SNOTEL / SNODAS / AMSR2
-                'MS_Rain_daily',   # From GPM / ERA5 / Open-Meteo
-                'profile_time',    # System clock (always accurate)
-            }
-            
             for feature in features_for_input:
                 if feature in st.session_state.env_data and st.session_state.env_data[feature] is not None:
-                    source = feature_source_map.get(feature, '')
-                    source_lower = source.lower() if source else ''
-                    
-                    # Only provide value if:
-                    # 1. It's a directly observed feature AND
-                    # 2. Its source is NOT a calculated/derived one
-                    is_calculated = any(kw in source_lower for kw in calculated_source_keywords)
-                    is_directly_observed = feature in DIRECTLY_OBSERVED_FEATURES
-                    
-                    if is_directly_observed and not is_calculated:
-                        st.session_state.inputs[feature] = st.session_state.env_data[feature]
-                    else:
-                        # Let KNN impute this - calculated values don't match training distribution
-                        st.session_state.inputs[feature] = np.nan
+                    st.session_state.inputs[feature] = st.session_state.env_data[feature]
                 else:
-                    st.session_state.inputs[feature] = np.nan  # Missing, KNN will impute
+                    st.session_state.inputs[feature] = np.nan  # Use NaN for missing, imputer will handle it
         
         weights_path = "model_reduced_weights.weights.h5"
         config_path = "model_reduced_config.json"
@@ -9997,33 +9951,6 @@ if analysis_mode == "📍 Single Point":
                 # Model confidence = how far from 0.5 the prediction is
                 model_confidence = abs(avalanche_probability - 0.5) * 2
                 use_ml_model = True
-                
-                # Debug logging to diagnose prediction issues
-                print(f"\n{'='*60}")
-                print(f"MODEL PREDICTION DEBUG")
-                print(f"{'='*60}")
-                print(f"Raw model output: {avalanche_probability:.6f}")
-                print(f"Threshold: {optimal_threshold:.4f}")
-                print(f"Provided features ({len(provided_features)}): {provided_features}")
-                print(f"Missing/imputed features ({len(missing_features)}): {missing_features}")
-                print(f"\nScaled input statistics:")
-                print(f"  Mean: {np.mean(input_scaled[0]):.4f}")
-                print(f"  Std:  {np.std(input_scaled[0]):.4f}")
-                print(f"  Min:  {np.min(input_scaled[0]):.4f}")
-                print(f"  Max:  {np.max(input_scaled[0]):.4f}")
-                print(f"  Any NaN: {np.any(np.isnan(input_scaled[0]))}")
-                print(f"  Any Inf: {np.any(np.isinf(input_scaled[0]))}")
-                print(f"\nKey feature values (original scale):")
-                key_debug = ['TA', 'max_height', 'SWE_daily', 'S5', 'ISWR_daily',
-                             'ILWR_daily', 'mean_lwc', 'water', 'MS_Rain_daily', 'Qs', 'Ql']
-                for feat in key_debug:
-                    if feat in available_features:
-                        idx_f = available_features.index(feat)
-                        orig_val = input_imputed_original[0][idx_f]
-                        scaled_val = input_scaled[0][idx_f]
-                        source_type = 'PROVIDED' if feat in provided_features else 'KNN-IMPUTED'
-                        print(f"  {feat}: {orig_val:.4f} (scaled: {scaled_val:.4f}) [{source_type}]")
-                print(f"{'='*60}\n")
                 
                 # Log KNN imputation info
                 if hasattr(st.session_state, 'knn_imputation_info'):
