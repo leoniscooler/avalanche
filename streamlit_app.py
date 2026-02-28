@@ -4564,7 +4564,6 @@ def render_data_with_verification(param_name, value, formatted_value, source_nam
 # 7-DAY AVALANCHE RISK FORECAST
 # ============================================
 
-@st.cache_data(ttl=600)  # Cache for 10 minutes to avoid rate limiting
 def fetch_7day_forecast(lat, lon, current_snow_depth=0, current_risk_score=None):
     """Fetch 7-day weather forecast data from Open-Meteo for avalanche risk prediction.
     
@@ -4662,14 +4661,6 @@ def fetch_7day_forecast(lat, lon, current_snow_depth=0, current_risk_score=None)
                 forecast_data['daily'].append(day_data)
             
             forecast_data['available'] = True
-        else:
-            forecast_data['error'] = f"Forecast API returned status {response.status_code}"
-            try:
-                error_payload = response.json()
-                if isinstance(error_payload, dict) and error_payload.get('reason'):
-                    forecast_data['error'] = f"{forecast_data['error']}: {error_payload.get('reason')}"
-            except Exception:
-                pass
             
     except Exception as e:
         forecast_data['error'] = str(e)
@@ -4769,15 +4760,6 @@ def create_forecast_chart(forecast_data):
     })
     
     return chart_data, daily
-
-
-def extract_lat_lon(location_obj):
-    """Extract latitude/longitude from location dictionaries with flexible key names."""
-    if not isinstance(location_obj, dict):
-        return None, None
-    lat = location_obj.get('latitude', location_obj.get('lat'))
-    lon = location_obj.get('longitude', location_obj.get('lon'))
-    return lat, lon
 
 
 # ============================================
@@ -7217,11 +7199,10 @@ if analysis_mode == "🗺️ Route Analysis":
         
         # TAB: Forecast
         with rt_tab_forecast:
-            route_lat, route_lon = extract_lat_lon(route_loc)
-            if route_lat is not None and route_lon is not None and route_lat != 0:
+            if route_loc['latitude'] != 0:
                 # For route analysis, use max risk score from route as current risk for day 1
                 route_max_risk = route_analysis.get('route_summary', {}).get('max_risk_score', None)
-                forecast = fetch_7day_forecast(route_lat, route_lon, 0, route_max_risk)
+                forecast = fetch_7day_forecast(route_loc['latitude'], route_loc['longitude'], 0, route_max_risk)
                 st.session_state.route_forecast = forecast  # Store forecast for AI context
                 
                 if forecast.get('available') and forecast.get('daily'):
@@ -7260,11 +7241,7 @@ if analysis_mode == "🗺️ Route Analysis":
                         })
                         st.bar_chart(risk_df.set_index('Day'))
                 else:
-                    error_msg = forecast.get('error')
-                    if error_msg:
-                        st.warning(f"Forecast data not available: {error_msg}")
-                    else:
-                        st.info("Forecast data not available")
+                    st.info("Forecast data not available")
             else:
                 st.info("No route data available for forecast")
         
@@ -7850,12 +7827,11 @@ else:
         # TAB: 7-Day Forecast
         with tab_forecast:
             forecast_loc = results.get('location', st.session_state.location)
-            forecast_lat, forecast_lon = extract_lat_lon(forecast_loc) if forecast_loc else (None, None)
-            if forecast_loc and forecast_lat is not None and forecast_lon is not None:
+            if forecast_loc:
                 # Pass current snow depth and ML risk score for accurate risk calculation
                 current_snow_depth = results.get('snow_depth', 0) or 0
                 current_ml_risk = results.get('avalanche_probability', None)  # ML model's prediction for today
-                forecast = fetch_7day_forecast(forecast_lat, forecast_lon, current_snow_depth, current_ml_risk)
+                forecast = fetch_7day_forecast(forecast_loc['latitude'], forecast_loc['longitude'], current_snow_depth, current_ml_risk)
                 st.session_state.forecast = forecast  # Store forecast for AI context
                 
                 if forecast.get('available') and forecast.get('daily'):
@@ -8127,7 +8103,7 @@ else:
                                         <strong style="color: {color};">{risk_level} Risk - {risk_score*100:.0f}% probability</strong><br>
                                         <span style="font-size: 0.85rem; color: #6b7280;">
                                             📡 Data from: Open-Meteo Forecast API | 
-                                            <a href="https://api.open-meteo.com/v1/forecast?latitude={forecast_lat}&longitude={forecast_lon}&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,snowfall_sum,wind_speed_10m_max,wind_gusts_10m_max,shortwave_radiation_sum&timezone=auto" target="_blank" style="color: #0369a1;">🔗 Verify</a>
+                                            <a href="https://api.open-meteo.com/v1/forecast?latitude={forecast_loc['latitude']}&longitude={forecast_loc['longitude']}&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,snowfall_sum,wind_speed_10m_max,wind_gusts_10m_max,shortwave_radiation_sum&timezone=auto" target="_blank" style="color: #0369a1;">🔗 Verify</a>
                                         </span>
                                     </div>
                                     """, unsafe_allow_html=True)
@@ -8160,14 +8136,6 @@ else:
                                         copy_text = ", ".join(feature_pairs)
                                         st.code(copy_text, language="text")
                                         st.caption("👆 Copy this text and paste into a spreadsheet or verify against API response")
-                else:
-                    error_msg = forecast.get('error')
-                    if error_msg:
-                        st.warning(f"Forecast data not available: {error_msg}")
-                    else:
-                        st.info("Forecast data not available for this location")
-            elif forecast_loc:
-                st.warning("Forecast unavailable: location coordinates are missing.")
             else:
                 st.info("Forecast data not available for this location")
         
@@ -9814,12 +9782,58 @@ if analysis_mode == "📍 Single Point":
         status_text.empty()
         
         # Prepare input data from satellite data (using NaN for missing values instead of 0)
+        # CRITICAL FIX: Only provide features that come from REAL data sources (API/satellite/station)
+        # Let KNN impute all calculated/derived/physics-estimated features so they match training data
         if st.session_state.env_data:
+            # Build a lookup of which features came from calculated sources
+            calculated_source_keywords = [
+                'calculated', 'physics', 'default', 'derived', 
+                'estimated', 'stefan-boltzmann', 'bulk aerodynamic',
+                'degree-day', 'multi-factor', 'system'
+            ]
+            
+            # Map feature -> source from data_sources_used
+            feature_source_map = {}
+            if st.session_state.data_sources:
+                for param, source in st.session_state.data_sources:
+                    feature_source_map[param] = source
+            
+            # Features that are DIRECTLY measured by APIs/satellites/stations
+            # (not calculated using physics formulas in process_satellite_data)
+            DIRECTLY_OBSERVED_FEATURES = {
+                'TA',              # From weather stations / Open-Meteo
+                'TA_daily',        # From ERA5 / Open-Meteo daily average
+                'ISWR_daily',      # From GOES/CERES / ERA5 / Open-Meteo
+                'ISWR_dir_daily',  # From ERA5 (if actually from API)
+                'ISWR_diff_daily', # From ERA5 (if actually from API)
+                'ILWR_daily',      # From ERA5 (if actually from API)
+                'max_height',      # From SNODAS / SNOTEL / ERA5 snow depth
+                'max_height_1_diff', # From ERA5/Open-Meteo snow depth history
+                'max_height_2_diff',
+                'max_height_3_diff',
+                'SWE_daily',       # From SNOTEL / SNODAS / AMSR2
+                'MS_Rain_daily',   # From GPM / ERA5 / Open-Meteo
+                'profile_time',    # System clock (always accurate)
+            }
+            
             for feature in features_for_input:
                 if feature in st.session_state.env_data and st.session_state.env_data[feature] is not None:
-                    st.session_state.inputs[feature] = st.session_state.env_data[feature]
+                    source = feature_source_map.get(feature, '')
+                    source_lower = source.lower() if source else ''
+                    
+                    # Only provide value if:
+                    # 1. It's a directly observed feature AND
+                    # 2. Its source is NOT a calculated/derived one
+                    is_calculated = any(kw in source_lower for kw in calculated_source_keywords)
+                    is_directly_observed = feature in DIRECTLY_OBSERVED_FEATURES
+                    
+                    if is_directly_observed and not is_calculated:
+                        st.session_state.inputs[feature] = st.session_state.env_data[feature]
+                    else:
+                        # Let KNN impute this - calculated values don't match training distribution
+                        st.session_state.inputs[feature] = np.nan
                 else:
-                    st.session_state.inputs[feature] = np.nan  # Use NaN for missing, imputer will handle it
+                    st.session_state.inputs[feature] = np.nan  # Missing, KNN will impute
         
         weights_path = "model_reduced_weights.weights.h5"
         config_path = "model_reduced_config.json"
@@ -9983,6 +9997,33 @@ if analysis_mode == "📍 Single Point":
                 # Model confidence = how far from 0.5 the prediction is
                 model_confidence = abs(avalanche_probability - 0.5) * 2
                 use_ml_model = True
+                
+                # Debug logging to diagnose prediction issues
+                print(f"\n{'='*60}")
+                print(f"MODEL PREDICTION DEBUG")
+                print(f"{'='*60}")
+                print(f"Raw model output: {avalanche_probability:.6f}")
+                print(f"Threshold: {optimal_threshold:.4f}")
+                print(f"Provided features ({len(provided_features)}): {provided_features}")
+                print(f"Missing/imputed features ({len(missing_features)}): {missing_features}")
+                print(f"\nScaled input statistics:")
+                print(f"  Mean: {np.mean(input_scaled[0]):.4f}")
+                print(f"  Std:  {np.std(input_scaled[0]):.4f}")
+                print(f"  Min:  {np.min(input_scaled[0]):.4f}")
+                print(f"  Max:  {np.max(input_scaled[0]):.4f}")
+                print(f"  Any NaN: {np.any(np.isnan(input_scaled[0]))}")
+                print(f"  Any Inf: {np.any(np.isinf(input_scaled[0]))}")
+                print(f"\nKey feature values (original scale):")
+                key_debug = ['TA', 'max_height', 'SWE_daily', 'S5', 'ISWR_daily',
+                             'ILWR_daily', 'mean_lwc', 'water', 'MS_Rain_daily', 'Qs', 'Ql']
+                for feat in key_debug:
+                    if feat in available_features:
+                        idx_f = available_features.index(feat)
+                        orig_val = input_imputed_original[0][idx_f]
+                        scaled_val = input_scaled[0][idx_f]
+                        source_type = 'PROVIDED' if feat in provided_features else 'KNN-IMPUTED'
+                        print(f"  {feat}: {orig_val:.4f} (scaled: {scaled_val:.4f}) [{source_type}]")
+                print(f"{'='*60}\n")
                 
                 # Log KNN imputation info
                 if hasattr(st.session_state, 'knn_imputation_info'):
