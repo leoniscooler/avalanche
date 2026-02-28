@@ -7213,7 +7213,7 @@ if analysis_mode == "🗺️ Route Analysis":
         with rt_tab_forecast:
             if route_loc['latitude'] != 0:
                 # For route analysis, use max risk score from route as current risk for day 1
-                route_max_risk = analysis.get('route_summary', {}).get('max_risk_score', None)
+                route_max_risk = route_analysis.get('route_summary', {}).get('max_risk_score', None)
                 forecast = fetch_7day_forecast(route_loc['latitude'], route_loc['longitude'], 0, route_max_risk)
                 st.session_state.route_forecast = forecast  # Store forecast for AI context
                 
