@@ -4564,6 +4564,7 @@ def render_data_with_verification(param_name, value, formatted_value, source_nam
 # 7-DAY AVALANCHE RISK FORECAST
 # ============================================
 
+@st.cache_data(ttl=600)  # Cache for 10 minutes to avoid rate limiting
 def fetch_7day_forecast(lat, lon, current_snow_depth=0, current_risk_score=None):
     """Fetch 7-day weather forecast data from Open-Meteo for avalanche risk prediction.
     
