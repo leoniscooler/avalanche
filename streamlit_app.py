@@ -4661,6 +4661,14 @@ def fetch_7day_forecast(lat, lon, current_snow_depth=0, current_risk_score=None)
                 forecast_data['daily'].append(day_data)
             
             forecast_data['available'] = True
+        else:
+            forecast_data['error'] = f"Forecast API returned status {response.status_code}"
+            try:
+                error_payload = response.json()
+                if isinstance(error_payload, dict) and error_payload.get('reason'):
+                    forecast_data['error'] = f"{forecast_data['error']}: {error_payload.get('reason')}"
+            except Exception:
+                pass
             
     except Exception as e:
         forecast_data['error'] = str(e)
@@ -4760,6 +4768,15 @@ def create_forecast_chart(forecast_data):
     })
     
     return chart_data, daily
+
+
+def extract_lat_lon(location_obj):
+    """Extract latitude/longitude from location dictionaries with flexible key names."""
+    if not isinstance(location_obj, dict):
+        return None, None
+    lat = location_obj.get('latitude', location_obj.get('lat'))
+    lon = location_obj.get('longitude', location_obj.get('lon'))
+    return lat, lon
 
 
 # ============================================
@@ -7199,10 +7216,11 @@ if analysis_mode == "🗺️ Route Analysis":
         
         # TAB: Forecast
         with rt_tab_forecast:
-            if route_loc['latitude'] != 0:
+            route_lat, route_lon = extract_lat_lon(route_loc)
+            if route_lat is not None and route_lon is not None and route_lat != 0:
                 # For route analysis, use max risk score from route as current risk for day 1
                 route_max_risk = route_analysis.get('route_summary', {}).get('max_risk_score', None)
-                forecast = fetch_7day_forecast(route_loc['latitude'], route_loc['longitude'], 0, route_max_risk)
+                forecast = fetch_7day_forecast(route_lat, route_lon, 0, route_max_risk)
                 st.session_state.route_forecast = forecast  # Store forecast for AI context
                 
                 if forecast.get('available') and forecast.get('daily'):
@@ -7241,7 +7259,11 @@ if analysis_mode == "🗺️ Route Analysis":
                         })
                         st.bar_chart(risk_df.set_index('Day'))
                 else:
-                    st.info("Forecast data not available")
+                    error_msg = forecast.get('error')
+                    if error_msg:
+                        st.warning(f"Forecast data not available: {error_msg}")
+                    else:
+                        st.info("Forecast data not available")
             else:
                 st.info("No route data available for forecast")
         
@@ -7827,11 +7849,12 @@ else:
         # TAB: 7-Day Forecast
         with tab_forecast:
             forecast_loc = results.get('location', st.session_state.location)
-            if forecast_loc:
+            forecast_lat, forecast_lon = extract_lat_lon(forecast_loc) if forecast_loc else (None, None)
+            if forecast_loc and forecast_lat is not None and forecast_lon is not None:
                 # Pass current snow depth and ML risk score for accurate risk calculation
                 current_snow_depth = results.get('snow_depth', 0) or 0
                 current_ml_risk = results.get('avalanche_probability', None)  # ML model's prediction for today
-                forecast = fetch_7day_forecast(forecast_loc['latitude'], forecast_loc['longitude'], current_snow_depth, current_ml_risk)
+                forecast = fetch_7day_forecast(forecast_lat, forecast_lon, current_snow_depth, current_ml_risk)
                 st.session_state.forecast = forecast  # Store forecast for AI context
                 
                 if forecast.get('available') and forecast.get('daily'):
@@ -8103,7 +8126,7 @@ else:
                                         <strong style="color: {color};">{risk_level} Risk - {risk_score*100:.0f}% probability</strong><br>
                                         <span style="font-size: 0.85rem; color: #6b7280;">
                                             📡 Data from: Open-Meteo Forecast API | 
-                                            <a href="https://api.open-meteo.com/v1/forecast?latitude={forecast_loc['latitude']}&longitude={forecast_loc['longitude']}&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,snowfall_sum,wind_speed_10m_max,wind_gusts_10m_max,shortwave_radiation_sum&timezone=auto" target="_blank" style="color: #0369a1;">🔗 Verify</a>
+                                            <a href="https://api.open-meteo.com/v1/forecast?latitude={forecast_lat}&longitude={forecast_lon}&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,snowfall_sum,wind_speed_10m_max,wind_gusts_10m_max,shortwave_radiation_sum&timezone=auto" target="_blank" style="color: #0369a1;">🔗 Verify</a>
                                         </span>
                                     </div>
                                     """, unsafe_allow_html=True)
@@ -8136,6 +8159,14 @@ else:
                                         copy_text = ", ".join(feature_pairs)
                                         st.code(copy_text, language="text")
                                         st.caption("👆 Copy this text and paste into a spreadsheet or verify against API response")
+                else:
+                    error_msg = forecast.get('error')
+                    if error_msg:
+                        st.warning(f"Forecast data not available: {error_msg}")
+                    else:
+                        st.info("Forecast data not available for this location")
+            elif forecast_loc:
+                st.warning("Forecast unavailable: location coordinates are missing.")
             else:
                 st.info("Forecast data not available for this location")
         
