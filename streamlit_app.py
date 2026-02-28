@@ -5082,8 +5082,18 @@ st.markdown("""
         margin: 1rem 0;
     }
     
+    .risk-extreme {
+        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+        color: white;
+    }
+    
     .risk-high {
         background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
+        color: white;
+    }
+    
+    .risk-considerable {
+        background: linear-gradient(135deg, #ea580c 0%, #c2410c 100%);
         color: white;
     }
     
@@ -6638,7 +6648,9 @@ if analysis_mode == "🗺️ Route Analysis":
         # Overall route risk card
         overall_risk = summary.get('overall_risk_level', 'UNKNOWN')
         risk_class = {
+            'EXTREME': 'risk-extreme',
             'HIGH': 'risk-high',
+            'CONSIDERABLE': 'risk-considerable',
             'MODERATE': 'risk-medium',
             'LOW': 'risk-low'
         }.get(overall_risk, 'risk-none')
@@ -7201,7 +7213,7 @@ if analysis_mode == "🗺️ Route Analysis":
         with rt_tab_forecast:
             if route_loc['latitude'] != 0:
                 # For route analysis, use max risk score from route as current risk for day 1
-                route_max_risk = route_analysis.get('route_summary', {}).get('max_risk_score', None)
+                route_max_risk = analysis.get('route_summary', {}).get('max_risk_score', None)
                 forecast = fetch_7day_forecast(route_loc['latitude'], route_loc['longitude'], 0, route_max_risk)
                 st.session_state.route_forecast = forecast  # Store forecast for AI context
                 
@@ -7487,13 +7499,25 @@ else:
         
         # Quick recommendations based on risk
         prob = results['avalanche_probability']
-        if prob >= 0.7:
+        if prob >= 0.85:
+            st.markdown("""
+            <div class="warning-box" style="margin: 1rem 0; background: #1a1a2e; color: white; border: 2px solid #dc2626;">
+                <strong>⛔ EXTREME Risk:</strong> Do NOT enter avalanche terrain · Natural and human-triggered avalanches certain · Stay in safe zones
+            </div>
+            """, unsafe_allow_html=True)
+        elif prob >= 0.7:
             st.markdown("""
             <div class="warning-box" style="margin: 1rem 0;">
                 <strong>⚠️ High Risk:</strong> Avoid avalanche terrain · Stay off steep slopes · Check local advisories
             </div>
             """, unsafe_allow_html=True)
-        elif prob >= 0.4:
+        elif prob >= 0.5:
+            st.markdown("""
+            <div class="warning-box" style="margin: 1rem 0;">
+                <strong>⚠️ Considerable Risk:</strong> Dangerous conditions on many slopes · Use avalanche safety gear · Conservative terrain choices
+            </div>
+            """, unsafe_allow_html=True)
+        elif prob >= 0.3:
             st.markdown("""
             <div class="warning-box" style="margin: 1rem 0;">
                 <strong>⚠️ Caution:</strong> Use avalanche safety gear · Travel with partners · Know escape routes
@@ -10008,13 +10032,19 @@ if analysis_mode == "📍 Single Point":
             risk_message = "No snow cover detected"
             avalanche_probability = 0.0  # 0% only for NONE (no snow)
             model_confidence = 1.0  # Very confident there's no risk without snow
-        elif avalanche_probability >= optimal_threshold:
-            # Probability at or above threshold = avalanche predicted = HIGH risk
+        elif avalanche_probability >= 0.85:
+            risk_level = "EXTREME"
+            risk_class = "risk-extreme"
+            risk_message = "Conditions are extremely dangerous - avoid all avalanche terrain"
+        elif avalanche_probability >= 0.7:
             risk_level = "HIGH"
             risk_class = "risk-high"
             risk_message = "Dangerous conditions likely"
-        elif avalanche_probability >= optimal_threshold * 0.7:
-            # Probability within 70-100% of threshold = MODERATE risk
+        elif avalanche_probability >= 0.5:
+            risk_level = "CONSIDERABLE"
+            risk_class = "risk-considerable"
+            risk_message = "Dangerous conditions on many slopes"
+        elif avalanche_probability >= 0.3:
             risk_level = "MODERATE"
             risk_class = "risk-medium"
             risk_message = "Exercise caution"
