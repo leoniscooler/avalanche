@@ -7471,36 +7471,184 @@ else:
         st.session_state.geo_coords_received = None
     
     # ============================================
-    # SECTION 1: RESULTS (if available) - MOST PROMINENT
+    # SECTION 1: LOCATION SELECTION (always visible)
+    # ============================================
+    st.markdown('<p class="section-header">Select Location</p>', unsafe_allow_html=True)
+    
+    # Auto-detect button
+    col_btn, col_space = st.columns([1, 2])
+    with col_btn:
+        detect_btn = st.button("📍 Auto-Detect My Location", type="primary", use_container_width=True)
+    
+    # Hidden input for geolocation coordinates
+    geo_input = st.text_input("geo_coords", key="geo_coords_input", label_visibility="collapsed", 
+                               placeholder="Coordinates will appear here...")
+    
+    # Process received coordinates
+    if geo_input and ',' in geo_input and geo_input != st.session_state.geo_coords_received:
+        try:
+            parts = geo_input.split(',')
+            if len(parts) >= 2:
+                lat = float(parts[0].strip())
+                lon = float(parts[1].strip())
+                
+                if -90 <= lat <= 90 and -180 <= lon <= 180:
+                    st.session_state.geo_coords_received = geo_input
+                    st.session_state.map_clicked_lat = lat
+                    st.session_state.map_clicked_lon = lon
+                    st.session_state.location = create_location_from_coords(lat, lon)
+                    st.session_state.location['elevation'] = get_elevation(lat, lon)
+                    st.session_state.location['source'] = 'GPS/Browser Geolocation'
+                    st.session_state.satellite_raw = None
+                    st.session_state.env_data = None
+                    st.session_state.assessment_results = None
+                    st.session_state.wind_loading_results = None
+                    st.session_state.run_assessment = True
+                    st.rerun()
+        except (ValueError, IndexError):
+            pass
+    
+    # Geolocation JavaScript
+    if detect_btn:
+        geolocation_js = """
+        <script>
+        (function() {
+            const inputs = parent.document.querySelectorAll('input[type="text"]');
+            let coordInput = null;
+            for (let input of inputs) {
+                if (input.placeholder && input.placeholder.includes('Coordinates')) {
+                    coordInput = input;
+                    break;
+                }
+            }
+            
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                    function(position) {
+                        const lat = position.coords.latitude;
+                        const lon = position.coords.longitude;
+                        
+                        if (coordInput) {
+                            const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+                            nativeInputValueSetter.call(coordInput, lat.toFixed(6) + ',' + lon.toFixed(6));
+                            coordInput.dispatchEvent(new Event('input', { bubbles: true }));
+                            coordInput.dispatchEvent(new Event('change', { bubbles: true }));
+                        }
+                    },
+                    function(error) {
+                        let msg = 'Location error: ';
+                        switch(error.code) {
+                            case error.PERMISSION_DENIED: msg += 'Permission denied'; break;
+                            case error.POSITION_UNAVAILABLE: msg += 'Position unavailable'; break;
+                            case error.TIMEOUT: msg += 'Request timed out'; break;
+                            default: msg += 'Unknown error';
+                        }
+                        alert(msg + '. Please click on the map to select your location.');
+                    },
+                    { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+                );
+            } else {
+                alert('Geolocation not supported. Please click on the map to select your location.');
+            }
+        })();
+        </script>
+        <div style="padding: 10px; background: #e0f2fe; border-radius: 8px; text-align: center;">
+            <span style="color: #0369a1;">📍 Requesting location... Please allow access when prompted.</span>
+        </div>
+        """
+        st.components.v1.html(geolocation_js, height=60)
+        st.info("👆 If coordinates appear above, press Enter to apply them.")
+    
+    st.markdown("")
+    st.caption("Or click on the map:")
+    
+    # Map - always visible
+    default_lat = st.session_state.get('map_clicked_lat') or 40.0
+    default_lon = st.session_state.get('map_clicked_lon') or -105.5
+    default_zoom = 10 if st.session_state.get('map_clicked_lat') else 4
+    
+    m = folium.Map(location=[default_lat, default_lon], zoom_start=default_zoom, tiles='OpenStreetMap')
+    
+    folium.TileLayer(
+        tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+        attr='Esri', name='Satellite', overlay=False
+    ).add_to(m)
+    
+    folium.TileLayer(
+        tiles='https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
+        attr='OpenTopoMap', name='Terrain', overlay=False
+    ).add_to(m)
+    
+    folium.LayerControl().add_to(m)
+    
+    # Show pin marker at selected location
+    if st.session_state.get('map_clicked_lat'):
+        folium.Marker(
+            [st.session_state.map_clicked_lat, st.session_state.map_clicked_lon],
+            popup=f"Lat: {st.session_state.map_clicked_lat:.4f}, Lon: {st.session_state.map_clicked_lon:.4f}",
+            icon=folium.Icon(color='red', icon='map-marker', prefix='fa')
+        ).add_to(m)
+    
+    map_data = st_folium(m, width=None, height=400, key="main_location_map", returned_objects=["last_clicked"])
+    
+    # Handle map clicks (single or double click - just update pin location)
+    if map_data and map_data.get('last_clicked'):
+        clicked_lat = map_data['last_clicked']['lat']
+        clicked_lon = map_data['last_clicked']['lng']
+        # Only update if location actually changed (prevents double-click re-triggers)
+        if (st.session_state.get('map_clicked_lat') != clicked_lat or 
+            st.session_state.get('map_clicked_lon') != clicked_lon):
+            st.session_state.map_clicked_lat = clicked_lat
+            st.session_state.map_clicked_lon = clicked_lon
+            # Clear old assessment when location changes
+            st.session_state.assessment_results = None
+            st.session_state.satellite_raw = None
+            st.session_state.env_data = None
+            st.session_state.wind_loading_results = None
+            st.rerun()
+    
+    # Show selected location info and Run Assessment button
+    if st.session_state.get('map_clicked_lat'):
+        st.success(f"📍 Selected: {st.session_state.map_clicked_lat:.4f}°N, {st.session_state.map_clicked_lon:.4f}°E")
+        
+        if not st.session_state.assessment_results:
+            if st.button("🔍 Run Avalanche Assessment", type="primary", use_container_width=True, key="run_assessment_btn"):
+                st.session_state.location = create_location_from_coords(
+                    st.session_state.map_clicked_lat,
+                    st.session_state.map_clicked_lon
+                )
+                st.session_state.location['elevation'] = get_elevation(
+                    st.session_state.map_clicked_lat,
+                    st.session_state.map_clicked_lon
+                )
+                st.session_state.satellite_raw = None
+                st.session_state.run_assessment = True
+                st.session_state.env_data = None
+                st.session_state.assessment_results = None
+                st.session_state.wind_loading_results = None
+                st.rerun()
+    
+    st.markdown("---")
+    
+    # ============================================
+    # SECTION 2: RESULTS (if available) - displayed below map
     # ============================================
     if st.session_state.assessment_results:
         results = st.session_state.assessment_results
         loc = st.session_state.location
         
-        # Location header with change button
-        loc_col1, loc_col2 = st.columns([5, 1])
-        with loc_col1:
-            elev = loc.get('elevation', 0) or 0
-            elev_display = format_distance(elev, 'elevation')
-            st.markdown(f"""
-            <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.5rem;">
-                <span style="font-size: 1.5rem;">📍</span>
-                <div>
-                    <div style="font-size: 1.1rem; font-weight: 600; color: #1f2937;">{loc.get('city', 'Unknown')}, {loc.get('region', '')}</div>
-                    <div style="font-size: 0.8rem; color: #6b7280;">{loc['latitude']:.4f}°N, {loc['longitude']:.4f}°E · Elevation: {elev_display}</div>
-                </div>
+        # Location info header
+        elev = loc.get('elevation', 0) or 0
+        elev_display = format_distance(elev, 'elevation')
+        st.markdown(f"""
+        <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.5rem;">
+            <span style="font-size: 1.5rem;">📍</span>
+            <div>
+                <div style="font-size: 1.1rem; font-weight: 600; color: #1f2937;">{loc.get('city', 'Unknown')}, {loc.get('region', '')}</div>
+                <div style="font-size: 0.8rem; color: #6b7280;">{loc['latitude']:.4f}°N, {loc['longitude']:.4f}°E · Elevation: {elev_display}</div>
             </div>
-            """, unsafe_allow_html=True)
-        with loc_col2:
-            if st.button("📍 Change", key="change_location_top", use_container_width=True):
-                st.session_state.map_clicked_lat = None
-                st.session_state.map_clicked_lon = None
-                st.session_state.location = None
-                st.session_state.satellite_raw = None
-                st.session_state.env_data = None
-                st.session_state.assessment_results = None
-                st.session_state.wind_loading_results = None
-                st.rerun()
+        </div>
+        """, unsafe_allow_html=True)
         
         # Main risk card - show 0% only for NONE, otherwise minimum 1%
         if results['risk_level'] == 'NONE':
@@ -9445,157 +9593,6 @@ else:
             st.markdown("---")
             st.caption("⚠️ This tool provides estimates and should not replace professional avalanche forecasts. Always check with local avalanche centers.")
     
-    # ============================================
-    # SECTION 2: LOCATION SELECTION (when no results or user wants to change)
-    # ============================================
-    if not st.session_state.assessment_results:
-        st.markdown('<p class="section-header">Select Location</p>', unsafe_allow_html=True)
-        
-        # Auto-detect button
-        col_btn, col_space = st.columns([1, 2])
-        with col_btn:
-            detect_btn = st.button("📍 Auto-Detect My Location", type="primary", use_container_width=True)
-        
-        # Hidden input for geolocation coordinates
-        geo_input = st.text_input("geo_coords", key="geo_coords_input", label_visibility="collapsed", 
-                                   placeholder="Coordinates will appear here...")
-        
-        # Process received coordinates
-        if geo_input and ',' in geo_input and geo_input != st.session_state.geo_coords_received:
-            try:
-                parts = geo_input.split(',')
-                if len(parts) >= 2:
-                    lat = float(parts[0].strip())
-                    lon = float(parts[1].strip())
-                    
-                    if -90 <= lat <= 90 and -180 <= lon <= 180:
-                        st.session_state.geo_coords_received = geo_input
-                        st.session_state.map_clicked_lat = lat
-                        st.session_state.map_clicked_lon = lon
-                        st.session_state.location = create_location_from_coords(lat, lon)
-                        st.session_state.location['elevation'] = get_elevation(lat, lon)
-                        st.session_state.location['source'] = 'GPS/Browser Geolocation'
-                        st.session_state.satellite_raw = None
-                        st.session_state.env_data = None
-                        st.session_state.assessment_results = None
-                        st.session_state.wind_loading_results = None
-                        st.session_state.run_assessment = True
-                        st.rerun()
-            except (ValueError, IndexError):
-                pass
-        
-        # Geolocation JavaScript
-        if detect_btn:
-            geolocation_js = """
-            <script>
-            (function() {
-                const inputs = parent.document.querySelectorAll('input[type="text"]');
-                let coordInput = null;
-                for (let input of inputs) {
-                    if (input.placeholder && input.placeholder.includes('Coordinates')) {
-                        coordInput = input;
-                        break;
-                    }
-                }
-                
-                if (navigator.geolocation) {
-                    navigator.geolocation.getCurrentPosition(
-                        function(position) {
-                            const lat = position.coords.latitude;
-                            const lon = position.coords.longitude;
-                            
-                            if (coordInput) {
-                                const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-                                nativeInputValueSetter.call(coordInput, lat.toFixed(6) + ',' + lon.toFixed(6));
-                                coordInput.dispatchEvent(new Event('input', { bubbles: true }));
-                                coordInput.dispatchEvent(new Event('change', { bubbles: true }));
-                            }
-                        },
-                        function(error) {
-                            let msg = 'Location error: ';
-                            switch(error.code) {
-                                case error.PERMISSION_DENIED: msg += 'Permission denied'; break;
-                                case error.POSITION_UNAVAILABLE: msg += 'Position unavailable'; break;
-                                case error.TIMEOUT: msg += 'Request timed out'; break;
-                                default: msg += 'Unknown error';
-                            }
-                            alert(msg + '. Please click on the map to select your location.');
-                        },
-                        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
-                    );
-                } else {
-                    alert('Geolocation not supported. Please click on the map to select your location.');
-                }
-            })();
-            </script>
-            <div style="padding: 10px; background: #e0f2fe; border-radius: 8px; text-align: center;">
-                <span style="color: #0369a1;">📍 Requesting location... Please allow access when prompted.</span>
-            </div>
-            """
-            st.components.v1.html(geolocation_js, height=60)
-            st.info("👆 If coordinates appear above, press Enter to apply them.")
-        
-        st.markdown("")
-        st.caption("Or click on the map:")
-        
-        # Map
-        default_lat = st.session_state.get('map_clicked_lat') or 40.0
-        default_lon = st.session_state.get('map_clicked_lon') or -105.5
-        
-        m = folium.Map(location=[default_lat, default_lon], zoom_start=4, tiles='OpenStreetMap')
-        
-        folium.TileLayer(
-            tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-            attr='Esri', name='Satellite', overlay=False
-        ).add_to(m)
-        
-        folium.TileLayer(
-            tiles='https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
-            attr='OpenTopoMap', name='Terrain', overlay=False
-        ).add_to(m)
-        
-        folium.LayerControl().add_to(m)
-        
-        if st.session_state.get('map_clicked_lat'):
-            folium.Marker(
-                [st.session_state.map_clicked_lat, st.session_state.map_clicked_lon],
-                popup=f"Lat: {st.session_state.map_clicked_lat:.4f}, Lon: {st.session_state.map_clicked_lon:.4f}",
-                icon=folium.Icon(color='red', icon='map-marker', prefix='fa')
-            ).add_to(m)
-        
-        map_data = st_folium(m, width=None, height=400, key="main_location_map", returned_objects=["last_clicked"])
-        
-        if map_data and map_data.get('last_clicked'):
-            st.session_state.map_clicked_lat = map_data['last_clicked']['lat']
-            st.session_state.map_clicked_lon = map_data['last_clicked']['lng']
-        
-        # Show selected location
-        if st.session_state.get('map_clicked_lat'):
-            st.success(f"📍 Selected: {st.session_state.map_clicked_lat:.4f}°N, {st.session_state.map_clicked_lon:.4f}°E")
-    
-    # ============================================
-    # LOCATION PROCESSING AND ASSESSMENT TRIGGER
-    # ============================================
-    # Set location from map click
-    if st.session_state.get('map_clicked_lat'):
-        if st.session_state.location is None or \
-           st.session_state.location.get('latitude') != st.session_state.map_clicked_lat or \
-           st.session_state.location.get('longitude') != st.session_state.map_clicked_lon:
-            st.session_state.location = create_location_from_coords(
-                st.session_state.map_clicked_lat, 
-                st.session_state.map_clicked_lon
-            )
-            st.session_state.location['elevation'] = get_elevation(
-                st.session_state.map_clicked_lat, 
-                st.session_state.map_clicked_lon
-            )
-            # Clear old data when location changes and trigger assessment
-            st.session_state.satellite_raw = None
-            st.session_state.run_assessment = True
-            st.session_state.env_data = None
-            st.session_state.assessment_results = None
-            st.session_state.wind_loading_results = None
-
 # Sidebar - minimal and clean
 st.sidebar.markdown("### Settings")
 
