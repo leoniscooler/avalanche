@@ -7547,7 +7547,7 @@ else:
                         if (n.length > 80) n = n.slice(0,77)+'...';
                         return '<div style="padding:0.6rem 0.75rem;cursor:pointer;font-size:0.9rem;border-bottom:1px solid #f3f4f6;" '+
                             'onmouseover="this.style.background=\'#f0f0ff\'" onmouseout="this.style.background=\'white\'" '+
-                            'data-lat="'+s.lat+'" data-lon="'+s.lon+'">\ud83d\udccd '+n+'</div>';
+                            'data-lat="'+s.lat+'" data-lon="'+s.lon+'">&#128205; '+n+'</div>';
                     }).join('');
                     dropdown.style.display = 'block';
                     dropdown.querySelectorAll('[data-lat]').forEach(function(el) {
