@@ -7476,12 +7476,7 @@ else:
     # ============================================
     st.markdown('<p class="section-header">Select Location</p>', unsafe_allow_html=True)
     
-    # Auto-detect button
-    col_btn, col_space = st.columns([1, 2])
-    with col_btn:
-        detect_btn = st.button("📍 Auto-Detect My Location", type="primary", use_container_width=True)
-    
-    # Hidden input for geolocation coordinates
+    # Hidden input for geolocation coordinates (must be rendered before map)
     geo_input = st.text_input("geo_coords", key="geo_coords_input", label_visibility="collapsed", 
                                placeholder="Coordinates will appear here...")
     
@@ -7509,7 +7504,58 @@ else:
         except (ValueError, IndexError):
             pass
     
-    # Geolocation JavaScript
+    st.caption("Click on the map to select your location:")
+    
+    # Map - always visible
+    default_lat = st.session_state.get('map_clicked_lat') or 40.0
+    default_lon = st.session_state.get('map_clicked_lon') or -105.5
+    default_zoom = 10 if st.session_state.get('map_clicked_lat') else 4
+    
+    m = folium.Map(location=[default_lat, default_lon], zoom_start=default_zoom, tiles='OpenStreetMap')
+    
+    folium.TileLayer(
+        tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+        attr='Esri', name='Satellite', overlay=False
+    ).add_to(m)
+    
+    folium.TileLayer(
+        tiles='https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
+        attr='OpenTopoMap', name='Terrain', overlay=False
+    ).add_to(m)
+    
+    folium.LayerControl().add_to(m)
+    
+    # Show pin marker at selected location
+    if st.session_state.get('map_clicked_lat'):
+        folium.Marker(
+            [st.session_state.map_clicked_lat, st.session_state.map_clicked_lon],
+            popup=f"Lat: {st.session_state.map_clicked_lat:.4f}, Lon: {st.session_state.map_clicked_lon:.4f}",
+            icon=folium.Icon(color='red', icon='map-marker', prefix='fa')
+        ).add_to(m)
+    
+    map_data = st_folium(m, width=None, height=400, key="main_location_map", returned_objects=["last_clicked"])
+    
+    # Handle map clicks (single or double click - just update pin location)
+    if map_data and map_data.get('last_clicked'):
+        clicked_lat = map_data['last_clicked']['lat']
+        clicked_lon = map_data['last_clicked']['lng']
+        # Only update if location actually changed (prevents double-click re-triggers)
+        if (st.session_state.get('map_clicked_lat') != clicked_lat or 
+            st.session_state.get('map_clicked_lon') != clicked_lon):
+            st.session_state.map_clicked_lat = clicked_lat
+            st.session_state.map_clicked_lon = clicked_lon
+            # Clear old assessment when location changes
+            st.session_state.assessment_results = None
+            st.session_state.satellite_raw = None
+            st.session_state.env_data = None
+            st.session_state.wind_loading_results = None
+            st.rerun()
+    
+    # Auto-detect location button (below map)
+    col_btn, col_space = st.columns([1, 2])
+    with col_btn:
+        detect_btn = st.button("📍 Auto-Detect My Location", type="secondary", use_container_width=True)
+    
     if detect_btn:
         geolocation_js = """
         <script>
@@ -7559,54 +7605,6 @@ else:
         """
         st.components.v1.html(geolocation_js, height=60)
         st.info("👆 If coordinates appear above, press Enter to apply them.")
-    
-    st.markdown("")
-    st.caption("Or click on the map:")
-    
-    # Map - always visible
-    default_lat = st.session_state.get('map_clicked_lat') or 40.0
-    default_lon = st.session_state.get('map_clicked_lon') or -105.5
-    default_zoom = 10 if st.session_state.get('map_clicked_lat') else 4
-    
-    m = folium.Map(location=[default_lat, default_lon], zoom_start=default_zoom, tiles='OpenStreetMap')
-    
-    folium.TileLayer(
-        tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-        attr='Esri', name='Satellite', overlay=False
-    ).add_to(m)
-    
-    folium.TileLayer(
-        tiles='https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
-        attr='OpenTopoMap', name='Terrain', overlay=False
-    ).add_to(m)
-    
-    folium.LayerControl().add_to(m)
-    
-    # Show pin marker at selected location
-    if st.session_state.get('map_clicked_lat'):
-        folium.Marker(
-            [st.session_state.map_clicked_lat, st.session_state.map_clicked_lon],
-            popup=f"Lat: {st.session_state.map_clicked_lat:.4f}, Lon: {st.session_state.map_clicked_lon:.4f}",
-            icon=folium.Icon(color='red', icon='map-marker', prefix='fa')
-        ).add_to(m)
-    
-    map_data = st_folium(m, width=None, height=400, key="main_location_map", returned_objects=["last_clicked"])
-    
-    # Handle map clicks (single or double click - just update pin location)
-    if map_data and map_data.get('last_clicked'):
-        clicked_lat = map_data['last_clicked']['lat']
-        clicked_lon = map_data['last_clicked']['lng']
-        # Only update if location actually changed (prevents double-click re-triggers)
-        if (st.session_state.get('map_clicked_lat') != clicked_lat or 
-            st.session_state.get('map_clicked_lon') != clicked_lon):
-            st.session_state.map_clicked_lat = clicked_lat
-            st.session_state.map_clicked_lon = clicked_lon
-            # Clear old assessment when location changes
-            st.session_state.assessment_results = None
-            st.session_state.satellite_raw = None
-            st.session_state.env_data = None
-            st.session_state.wind_loading_results = None
-            st.rerun()
     
     # Show selected location info and Run Assessment button
     if st.session_state.get('map_clicked_lat'):
