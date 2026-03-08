@@ -2680,9 +2680,9 @@ def fetch_all_satellite_data(lat, lon, progress_callback=None):
             source_name = future_to_source[future]
             completed_count += 1
             
-            # Update progress
+            # Update progress with source name
             if progress_callback:
-                progress_callback(completed_count / total_sources, f"🛰️ Fetching data... ({completed_count}/{total_sources})")
+                progress_callback(completed_count / total_sources, f"🛰️ Fetching data... ({completed_count}/{total_sources}) — ✅ {source_name}")
             
             try:
                 name, source_data, quality, error = future.result()
@@ -7261,7 +7261,9 @@ if analysis_mode == "🗺️ Route Analysis":
                                 risk_score = day['risk_score']
                                 risk_level = day['risk_level']
                                 
-                                if risk_level == 'HIGH':
+                                if risk_level == 'NONE':
+                                    bg_color, border_color, text_color = '#f3f4f6', '#9ca3af', '#6b7280'
+                                elif risk_level == 'HIGH':
                                     bg_color, border_color, text_color = '#fef2f2', '#dc2626', '#dc2626'
                                 elif risk_level == 'MODERATE':
                                     bg_color, border_color, text_color = '#fffbeb', '#f59e0b', '#d97706'
@@ -8178,7 +8180,11 @@ else:
                                 risk_score = day['risk_score']
                                 risk_level = day['risk_level']
                                 
-                                if risk_level == 'HIGH':
+                                if risk_level == 'NONE':
+                                    bg_color = '#f3f4f6'
+                                    border_color = '#9ca3af'
+                                    text_color = '#6b7280'
+                                elif risk_level == 'HIGH':
                                     bg_color = '#fef2f2'
                                     border_color = '#dc2626'
                                     text_color = '#dc2626'
@@ -9953,13 +9959,15 @@ if analysis_mode == "📍 Single Point":
         # Fetch satellite data and run assessment - prominent loading UI
         loading_container = st.container()
         with loading_container:
-            st.markdown("""
+            loading_card = st.empty()
+            loading_card.markdown("""
             <div style="background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%); 
                         border: 2px solid #3b82f6; border-radius: 12px; padding: 1.5rem; 
                         margin: 1rem 0; text-align: center;">
                 <div style="font-size: 2rem; margin-bottom: 0.5rem;">🛰️</div>
                 <div style="font-size: 1.1rem; font-weight: 600; color: #1e40af;">Fetching Satellite Data</div>
                 <div style="font-size: 0.85rem; color: #3b82f6; margin-top: 0.25rem;">Collecting real-time weather & snow data from multiple sources...</div>
+                <div style="font-size: 0.8rem; color: #6b7280; margin-top: 0.5rem;">Starting...</div>
             </div>
             """, unsafe_allow_html=True)
         progress_bar = st.progress(0)
@@ -9967,7 +9975,35 @@ if analysis_mode == "📍 Single Point":
         
         def update_progress(progress, text):
             progress_bar.progress(progress)
-            status_text.text(text.replace("🛰️ ", "").replace("Fetching ", "Loading "))
+            # Parse callback text: "🛰️ Fetching data... (X/Y) — ✅ Source Name"
+            pct = int(progress * 100)
+            # Extract count and source name
+            count_part = ""
+            source_part = ""
+            if "—" in text:
+                parts = text.split("—", 1)
+                # Get (X/Y) from first part
+                import re
+                count_match = re.search(r'\((\d+/\d+)\)', parts[0])
+                if count_match:
+                    count_part = count_match.group(1)
+                source_part = parts[1].strip()
+            else:
+                source_part = text.replace("🛰️ ", "").replace("Fetching data... ", "")
+            
+            status_line = f"{source_part}  ({count_part})" if count_part else source_part
+            status_text.text(status_line)
+            # Update the loading card with current source
+            loading_card.markdown(f"""
+            <div style="background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%); 
+                        border: 2px solid #3b82f6; border-radius: 12px; padding: 1.5rem; 
+                        margin: 1rem 0; text-align: center;">
+                <div style="font-size: 2rem; margin-bottom: 0.5rem;">🛰️</div>
+                <div style="font-size: 1.1rem; font-weight: 600; color: #1e40af;">Fetching Satellite Data</div>
+                <div style="font-size: 0.85rem; color: #3b82f6; margin-top: 0.25rem;">Collecting real-time weather & snow data from multiple sources...</div>
+                <div style="font-size: 0.8rem; color: #1e40af; margin-top: 0.5rem; font-weight: 500;">{pct}% complete ({count_part}) — {source_part}</div>
+            </div>
+            """, unsafe_allow_html=True)
         
         with st.spinner("Loading satellite data..."):
             lat = st.session_state.location['latitude']
