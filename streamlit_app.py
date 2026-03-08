@@ -7264,8 +7264,9 @@ if analysis_mode == "🗺️ Route Analysis":
                         
                         st.markdown("")
                         st.markdown("**Risk Trend (Route Midpoint)**")
+                        day_labels = [d['date_formatted'] for d in daily]
                         risk_df = pd.DataFrame({
-                            'Day': [d['date_formatted'] for d in daily],
+                            'Day': pd.Categorical(day_labels, categories=day_labels, ordered=True),
                             'Risk (%)': [round(d['risk_score'] * 100) for d in daily]
                         })
                         st.bar_chart(risk_df.set_index('Day'))
@@ -8054,8 +8055,9 @@ else:
                         # Risk trend chart
                         st.markdown("")
                         st.markdown("**Risk Trend**")
+                        day_labels = [d['date_formatted'] for d in daily]
                         risk_df = pd.DataFrame({
-                            'Day': [d['date_formatted'] for d in daily],
+                            'Day': pd.Categorical(day_labels, categories=day_labels, ordered=True),
                             'Risk (%)': [round(d['risk_score'] * 100) for d in daily]
                         })
                         st.bar_chart(risk_df.set_index('Day'))
