@@ -4005,7 +4005,8 @@ def create_route_map(route_analysis, center_lat=None, center_lon=None):
         tiles='https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
         attr='OpenTopoMap',
         name='Terrain',
-        overlay=False
+        overlay=False,
+        show=False
     ).add_to(m)
     
     # Color function based on risk
@@ -6587,7 +6588,8 @@ if analysis_mode == "🗺️ Route Analysis":
         tiles='https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
         attr='OpenTopoMap',
         name='Terrain',
-        overlay=False
+        overlay=False,
+        show=False
     ).add_to(m)
     
     # Add satellite layer
@@ -6595,7 +6597,8 @@ if analysis_mode == "🗺️ Route Analysis":
         tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
         attr='Esri',
         name='Satellite',
-        overlay=False
+        overlay=False,
+        show=False
     ).add_to(m)
     
     # Add drawing tools
@@ -7482,39 +7485,93 @@ else:
     # ============================================
     st.markdown('<p class="section-header">📍 Choose Your Location</p>', unsafe_allow_html=True)
     
-    # Search box for location with autocomplete-style suggestions
-    search_query = st.text_input("🔍 Search for a place", placeholder="Search here or select a location on the map", 
-                                  key="location_search", label_visibility="collapsed")
-    
-    # Autocomplete-style suggestions while typing
-    if search_query and len(search_query) >= 2 and search_query != st.session_state.get('last_search_applied', ''):
-        try:
-            geocode_url = f"https://nominatim.openstreetmap.org/search?q={search_query}&format=json&limit=5&addressdetails=1"
-            headers = {'User-Agent': 'AvalanchePredictor/1.0'}
-            resp = requests.get(geocode_url, headers=headers, timeout=5)
-            if resp.status_code == 200:
-                suggestions = resp.json()
-                if suggestions:
-                    for idx, s in enumerate(suggestions):
-                        display_name = s.get('display_name', '')
-                        # Truncate long names
-                        if len(display_name) > 80:
-                            display_name = display_name[:77] + '...'
-                        if st.button(f"📍 {display_name}", key=f"suggestion_{idx}", use_container_width=True):
-                            lat = float(s['lat'])
-                            lon = float(s['lon'])
-                            st.session_state.map_clicked_lat = lat
-                            st.session_state.map_clicked_lon = lon
-                            st.session_state.last_search_applied = search_query
-                            st.session_state.assessment_results = None
-                            st.session_state.satellite_raw = None
-                            st.session_state.env_data = None
-                            st.session_state.wind_loading_results = None
-                            st.rerun()
-                else:
-                    st.caption("No results found. Try a different search or click the map.")
-        except Exception:
-            pass
+    # Handle search selection via query params (from JS live search)
+    _params = st.query_params
+    if 'search_lat' in _params and 'search_lon' in _params:
+        st.session_state.map_clicked_lat = float(_params['search_lat'])
+        st.session_state.map_clicked_lon = float(_params['search_lon'])
+        st.session_state.assessment_results = None
+        st.session_state.satellite_raw = None
+        st.session_state.env_data = None
+        st.session_state.wind_loading_results = None
+        del st.query_params['search_lat']
+        del st.query_params['search_lon']
+        st.rerun()
+
+    # Search box for location with live autocomplete
+    st.text_input("🔍 Search for a place", placeholder="Search here or select a location on the map",
+                  key="location_search", label_visibility="collapsed")
+
+    # Inject JS for live search-as-you-type with Nominatim
+    components.html("""
+<script>
+(function() {
+    function init() {
+        var doc = window.parent.document;
+        var inputs = doc.querySelectorAll('input[placeholder*="Search here"]');
+        if (!inputs.length) { setTimeout(init, 200); return; }
+        var input = inputs[0];
+        if (input.dataset.liveSearchInit) return;
+        input.dataset.liveSearchInit = 'true';
+
+        // Prevent Enter from triggering Streamlit rerun
+        input.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); return false; }
+        }, true);
+
+        // Create dropdown
+        var dropdown = doc.createElement('div');
+        dropdown.id = 'live-search-dropdown';
+        dropdown.style.cssText = 'position:absolute;left:0;right:0;top:100%;z-index:999999;background:white;border-radius:0 0 0.5rem 0.5rem;box-shadow:0 4px 12px rgba(0,0,0,0.15);max-height:280px;overflow-y:auto;display:none;';
+        var wrapper = input.closest('[data-testid="stTextInput"]') || input.parentElement;
+        wrapper.style.position = 'relative';
+        wrapper.appendChild(dropdown);
+
+        var timeout;
+        input.addEventListener('input', function() {
+            clearTimeout(timeout);
+            var q = input.value.trim();
+            if (q.length < 2) { dropdown.innerHTML=''; dropdown.style.display='none'; return; }
+            timeout = setTimeout(function() {
+                fetch('https://nominatim.openstreetmap.org/search?q='+encodeURIComponent(q)+'&format=json&limit=5&addressdetails=1',
+                    {headers:{'User-Agent':'AvalanchePredictor/1.0'}})
+                .then(function(r){return r.json();})
+                .then(function(data) {
+                    if (!data.length) {
+                        dropdown.innerHTML = '<div style="padding:0.6rem 0.75rem;color:#9ca3af;font-size:0.85rem;">No results found</div>';
+                        dropdown.style.display = 'block';
+                        return;
+                    }
+                    dropdown.innerHTML = data.map(function(s) {
+                        var n = s.display_name;
+                        if (n.length > 80) n = n.slice(0,77)+'...';
+                        return '<div style="padding:0.6rem 0.75rem;cursor:pointer;font-size:0.9rem;border-bottom:1px solid #f3f4f6;" '+
+                            'onmouseover="this.style.background=\'#f0f0ff\'" onmouseout="this.style.background=\'white\'" '+
+                            'data-lat="'+s.lat+'" data-lon="'+s.lon+'">\ud83d\udccd '+n+'</div>';
+                    }).join('');
+                    dropdown.style.display = 'block';
+                    dropdown.querySelectorAll('[data-lat]').forEach(function(el) {
+                        el.onclick = function() {
+                            var u = new URL(window.parent.location);
+                            u.searchParams.set('search_lat', this.dataset.lat);
+                            u.searchParams.set('search_lon', this.dataset.lon);
+                            window.parent.location.href = u.toString();
+                        };
+                    });
+                }).catch(function(){});
+            }, 300);
+        });
+
+        doc.addEventListener('click', function(e) {
+            if (!input.contains(e.target) && !dropdown.contains(e.target)) {
+                dropdown.style.display = 'none';
+            }
+        });
+    }
+    setTimeout(init, 300);
+})();
+</script>
+""", height=0)
     
     # Map - always visible
     default_lat = st.session_state.get('map_clicked_lat') or 40.0
@@ -7525,12 +7582,12 @@ else:
     
     folium.TileLayer(
         tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-        attr='Esri', name='Satellite', overlay=False
+        attr='Esri', name='Satellite', overlay=False, show=False
     ).add_to(m)
     
     folium.TileLayer(
         tiles='https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
-        attr='OpenTopoMap', name='Terrain', overlay=False
+        attr='OpenTopoMap', name='Terrain', overlay=False, show=False
     ).add_to(m)
     
     folium.LayerControl().add_to(m)
@@ -8382,7 +8439,8 @@ else:
                         tiles='https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
                         attr='OpenTopoMap',
                         name='Terrain',
-                        overlay=False
+                        overlay=False,
+                        show=False
                     ).add_to(wind_map)
                     
                     overlays = create_wind_loading_overlay(wind_loc['latitude'], wind_loc['longitude'], wind_analysis, radius_km=2)
