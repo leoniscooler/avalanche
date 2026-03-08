@@ -6936,9 +6936,9 @@ if analysis_mode == "🗺️ Route Analysis":
         }
         
         # Create tabs
-        rt_tab_summary, rt_tab_profile, rt_tab_ai, rt_tab_alternatives, rt_tab_forecast, rt_tab_wind, rt_tab_conditions, rt_tab_live, rt_tab_details = st.tabs([
-            "📋 Summary", "👤 Personal", "🤖 Ask AI", "🗺️ Alternatives",
-            "📅 Forecast", "💨 Wind", "🌡️ Conditions", "📷 Live View", "ℹ️ Details"
+        rt_tab_forecast, rt_tab_alternatives, rt_tab_summary, rt_tab_profile, rt_tab_ai, rt_tab_wind, rt_tab_conditions, rt_tab_live, rt_tab_details = st.tabs([
+            "📅 Forecast", "🗺️ Alternatives", "📋 Summary", "👤 Personal", "🤖 Ask AI",
+            "💨 Wind", "🌡️ Conditions", "📷 Live View", "ℹ️ Details"
         ])
         
         # TAB: Route Summary
@@ -7708,9 +7708,9 @@ else:
         st.markdown("### 📊 Detailed Forecast & Conditions")
         
         # Create tabs including the moved sections
-        tab_summary, tab_profile, tab_ai, tab_alternatives, tab_forecast, tab_wind, tab_conditions, tab_live, tab_details = st.tabs([
-            "📋 Summary", "👤 Personal", "🤖 Ask AI", "🗺️ Alternatives",
-            "📅 Forecast", "💨 Wind", "🌡️ Conditions", "📷 Live View", "ℹ️ Details"
+        tab_forecast, tab_alternatives, tab_summary, tab_profile, tab_ai, tab_wind, tab_conditions, tab_live, tab_details = st.tabs([
+            "📅 Forecast", "🗺️ Alternatives", "📋 Summary", "👤 Personal", "🤖 Ask AI",
+            "💨 Wind", "🌡️ Conditions", "📷 Live View", "ℹ️ Details"
         ])
         
         # TAB: Conditions Summary
