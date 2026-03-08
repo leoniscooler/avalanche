@@ -7485,38 +7485,73 @@ else:
     # ============================================
     st.markdown('<p class="section-header">📍 Choose Your Location</p>', unsafe_allow_html=True)
     
-    # Search box for location with suggestions
+    # Search box for location with fuzzy/predictive suggestions
     search_query = st.text_input("🔍 Search for a place", placeholder="Search here or select a location on the map", 
                                   key="location_search", label_visibility="collapsed")
     
-    # Show suggestions when user submits a search
+    # Show suggestions when user submits a search (uses Photon for typo-tolerant fuzzy matching)
     if search_query and len(search_query) >= 2 and search_query != st.session_state.get('last_search_applied', ''):
+        suggestions_found = []
         try:
-            geocode_url = f"https://nominatim.openstreetmap.org/search?q={search_query}&format=json&limit=5&addressdetails=1"
+            # Photon API - handles typos, partial words, extra words, autocomplete
+            photon_url = f"https://photon.komoot.io/api/?q={search_query}&limit=5&lang=en"
             headers = {'User-Agent': 'AvalanchePredictor/1.0'}
-            resp = requests.get(geocode_url, headers=headers, timeout=5)
+            resp = requests.get(photon_url, headers=headers, timeout=5)
             if resp.status_code == 200:
-                suggestions = resp.json()
-                if suggestions:
-                    for idx, s in enumerate(suggestions):
+                data = resp.json()
+                for feat in data.get('features', []):
+                    props = feat.get('properties', {})
+                    coords = feat.get('geometry', {}).get('coordinates', [])
+                    if len(coords) >= 2:
+                        # Build a readable display name from properties
+                        parts = []
+                        for key in ['name', 'street', 'city', 'county', 'state', 'country']:
+                            val = props.get(key)
+                            if val and val not in parts:
+                                parts.append(val)
+                        display_name = ', '.join(parts) if parts else props.get('name', 'Unknown')
+                        if len(display_name) > 80:
+                            display_name = display_name[:77] + '...'
+                        suggestions_found.append({
+                            'display_name': display_name,
+                            'lat': coords[1],
+                            'lon': coords[0]
+                        })
+        except Exception:
+            pass
+        
+        # Fallback to Nominatim if Photon returns nothing
+        if not suggestions_found:
+            try:
+                geocode_url = f"https://nominatim.openstreetmap.org/search?q={search_query}&format=json&limit=5&addressdetails=1"
+                headers = {'User-Agent': 'AvalanchePredictor/1.0'}
+                resp = requests.get(geocode_url, headers=headers, timeout=5)
+                if resp.status_code == 200:
+                    for s in resp.json():
                         display_name = s.get('display_name', '')
                         if len(display_name) > 80:
                             display_name = display_name[:77] + '...'
-                        if st.button(f"📍 {display_name}", key=f"suggestion_{idx}", use_container_width=True):
-                            lat = float(s['lat'])
-                            lon = float(s['lon'])
-                            st.session_state.map_clicked_lat = lat
-                            st.session_state.map_clicked_lon = lon
-                            st.session_state.last_search_applied = search_query
-                            st.session_state.assessment_results = None
-                            st.session_state.satellite_raw = None
-                            st.session_state.env_data = None
-                            st.session_state.wind_loading_results = None
-                            st.rerun()
-                else:
-                    st.caption("No results found. Try a different search or click the map.")
-        except Exception:
-            pass
+                        suggestions_found.append({
+                            'display_name': display_name,
+                            'lat': float(s['lat']),
+                            'lon': float(s['lon'])
+                        })
+            except Exception:
+                pass
+        
+        if suggestions_found:
+            for idx, s in enumerate(suggestions_found):
+                if st.button(f"📍 {s['display_name']}", key=f"suggestion_{idx}", use_container_width=True):
+                    st.session_state.map_clicked_lat = s['lat']
+                    st.session_state.map_clicked_lon = s['lon']
+                    st.session_state.last_search_applied = search_query
+                    st.session_state.assessment_results = None
+                    st.session_state.satellite_raw = None
+                    st.session_state.env_data = None
+                    st.session_state.wind_loading_results = None
+                    st.rerun()
+        else:
+            st.caption("No results found. Try a different search or click the map.")
     
     # Map - always visible
     default_lat = st.session_state.get('map_clicked_lat') or 40.0
