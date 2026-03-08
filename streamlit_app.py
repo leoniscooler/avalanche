@@ -6861,7 +6861,7 @@ if analysis_mode == "🗺️ Route Analysis":
                     wind_map = folium.Map(
                         location=[start_wp[0], start_wp[1]],
                         zoom_start=12,
-                        tiles='OpenTopoMap'
+                        tiles='OpenStreetMap'
                     )
                     
                     # Add wind loading overlays
@@ -7967,7 +7967,7 @@ else:
                         alt_map = folium.Map(
                             location=[loc['latitude'], loc['longitude']],
                             zoom_start=13,
-                            tiles='OpenTopoMap'
+                            tiles='OpenStreetMap'
                         )
                         
                         # Current location marker (red)
