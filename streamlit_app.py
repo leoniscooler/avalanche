@@ -7575,8 +7575,6 @@ else:
         attr='OpenTopoMap', name='Terrain', overlay=False, show=False
     ).add_to(m)
     
-    folium.LayerControl().add_to(m)
-    
     # Show pin marker at selected location
     if st.session_state.get('map_clicked_lat'):
         folium.Marker(
@@ -7585,6 +7583,46 @@ else:
             tooltip="Your selected location",
             icon=folium.Icon(color='red', icon='map-marker', prefix='fa')
         ).add_to(m)
+        
+        # Show prediction radius and alternatives if assessment has been run
+        if st.session_state.get('assessment_results'):
+            _results = st.session_state.assessment_results
+            _risk = _results.get('avalanche_probability', 0)
+            _risk_level = _results.get('risk_level', 'LOW')
+            
+            # Prediction radius circle (5 km = radius used by find_safe_alternatives)
+            radius_color = '#ef4444' if _risk_level == 'HIGH' else '#f59e0b' if _risk_level == 'MODERATE' else '#10b981'
+            folium.Circle(
+                location=[st.session_state.map_clicked_lat, st.session_state.map_clicked_lon],
+                radius=5000,  # 5 km in meters
+                color=radius_color,
+                weight=2,
+                fill=True,
+                fill_color=radius_color,
+                fill_opacity=0.08,
+                popup=f"Model prediction radius (5 km)<br>Risk: {clamp_risk_pct(_risk * 100)}%",
+                tooltip="Prediction radius (5 km)"
+            ).add_to(m)
+            
+            # Show alternative location markers if risk is elevated
+            if _risk_level in ['HIGH', 'MODERATE']:
+                _alts = find_safe_alternatives(
+                    st.session_state.map_clicked_lat,
+                    st.session_state.map_clicked_lon,
+                    _risk,
+                    st.session_state.get('wind_loading_results')
+                )
+                if _alts:
+                    alt_colors = {'LOW': 'green', 'MODERATE': 'orange', 'HIGH': 'red'}
+                    for _alt in _alts:
+                        folium.Marker(
+                            [_alt['lat'], _alt['lon']],
+                            popup=f"<b>{_alt['name']}</b><br>Risk: {clamp_risk_pct(_alt['estimated_risk']*100)}%<br>↓ {_alt['risk_reduction']:.0f}% lower<br>{_alt['reason']}",
+                            tooltip=f"{_alt['name']} ({_alt['risk_level']})",
+                            icon=folium.Icon(color=alt_colors.get(_alt['risk_level'], 'blue'), icon='check', prefix='fa')
+                        ).add_to(m)
+    
+    folium.LayerControl().add_to(m)
     
     map_data = st_folium(m, width=None, height=450, key="main_location_map", returned_objects=["last_clicked"])
     
