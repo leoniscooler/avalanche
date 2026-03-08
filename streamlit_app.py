@@ -7472,45 +7472,39 @@ else:
     # ============================================
     st.markdown('<p class="section-header">📍 Choose Your Location</p>', unsafe_allow_html=True)
     
-    st.markdown("""
-    <div style="background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 10px; padding: 0.75rem 1rem; margin-bottom: 0.75rem;">
-        <div style="display: flex; align-items: center; gap: 0.5rem;">
-            <span style="font-size: 1.3rem;">🗺️</span>
-            <div>
-                <strong style="color: #0369a1; font-size: 0.95rem;">Click anywhere on the map</strong>
-                <span style="color: #6b7280; font-size: 0.85rem;"> to drop a pin, then press <strong>Run Assessment</strong> below.</span>
-            </div>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    # Search box for location
-    search_query = st.text_input("🔍 Search for a place", placeholder="e.g. Mount Rainier, Chamonix, Whistler...", 
+    # Search box for location with autocomplete-style suggestions
+    search_query = st.text_input("🔍 Search for a place", placeholder="Search here or select a location on the map", 
                                   key="location_search", label_visibility="collapsed")
     
-    # Process search query
-    if search_query and search_query != st.session_state.get('last_search_query', ''):
-        st.session_state.last_search_query = search_query
+    # Autocomplete-style suggestions while typing
+    if search_query and len(search_query) >= 2 and search_query != st.session_state.get('last_search_applied', ''):
         try:
-            geocode_url = f"https://nominatim.openstreetmap.org/search?q={search_query}&format=json&limit=1"
+            geocode_url = f"https://nominatim.openstreetmap.org/search?q={search_query}&format=json&limit=5&addressdetails=1"
             headers = {'User-Agent': 'AvalanchePredictor/1.0'}
             resp = requests.get(geocode_url, headers=headers, timeout=5)
             if resp.status_code == 200:
-                results_geo = resp.json()
-                if results_geo:
-                    lat = float(results_geo[0]['lat'])
-                    lon = float(results_geo[0]['lon'])
-                    st.session_state.map_clicked_lat = lat
-                    st.session_state.map_clicked_lon = lon
-                    st.session_state.assessment_results = None
-                    st.session_state.satellite_raw = None
-                    st.session_state.env_data = None
-                    st.session_state.wind_loading_results = None
-                    st.rerun()
+                suggestions = resp.json()
+                if suggestions:
+                    for idx, s in enumerate(suggestions):
+                        display_name = s.get('display_name', '')
+                        # Truncate long names
+                        if len(display_name) > 80:
+                            display_name = display_name[:77] + '...'
+                        if st.button(f"📍 {display_name}", key=f"suggestion_{idx}", use_container_width=True):
+                            lat = float(s['lat'])
+                            lon = float(s['lon'])
+                            st.session_state.map_clicked_lat = lat
+                            st.session_state.map_clicked_lon = lon
+                            st.session_state.last_search_applied = search_query
+                            st.session_state.assessment_results = None
+                            st.session_state.satellite_raw = None
+                            st.session_state.env_data = None
+                            st.session_state.wind_loading_results = None
+                            st.rerun()
                 else:
-                    st.warning("Location not found. Try a different search or click the map directly.")
+                    st.caption("No results found. Try a different search or click the map.")
         except Exception:
-            st.warning("Search failed. Click the map directly to choose your location.")
+            pass
     
     # Map - always visible
     default_lat = st.session_state.get('map_clicked_lat') or 40.0
