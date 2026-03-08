@@ -7658,7 +7658,12 @@ else:
         
         if not st.session_state.assessment_results:
             st.markdown("")
-            if st.button("🔍 Run Avalanche Assessment", type="primary", use_container_width=True, key="run_assessment_btn"):
+            # Show loading spinner if assessment is running
+            if st.session_state.get('run_assessment'):
+                st.info("⏳ Running avalanche assessment... Please wait.")
+                loading_placeholder = st.empty()
+                loading_placeholder.progress(0, text="Initializing...")
+            elif st.button("🔍 Run Avalanche Assessment", type="primary", use_container_width=True, key="run_assessment_btn"):
                 st.session_state.location = create_location_from_coords(
                     st.session_state.map_clicked_lat,
                     st.session_state.map_clicked_lon
