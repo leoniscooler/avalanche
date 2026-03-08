@@ -7490,7 +7490,11 @@ else:
                                   key="location_search", label_visibility="collapsed")
     
     # Show suggestions when user submits a search (uses Photon for typo-tolerant fuzzy matching)
-    if search_query and len(search_query) >= 2 and search_query != st.session_state.get('last_search_applied', ''):
+    # Clear the "just selected" flag if the user changed their query
+    if search_query != st.session_state.get('_search_just_selected_query', ''):
+        st.session_state._search_just_selected = False
+    
+    if search_query and len(search_query) >= 2 and not st.session_state.get('_search_just_selected', False):
         suggestions_found = []
         try:
             # Photon API - handles typos, partial words, extra words, autocomplete
@@ -7544,7 +7548,8 @@ else:
                 if st.button(f"📍 {s['display_name']}", key=f"suggestion_{idx}", use_container_width=True):
                     st.session_state.map_clicked_lat = s['lat']
                     st.session_state.map_clicked_lon = s['lon']
-                    st.session_state.last_search_applied = search_query
+                    st.session_state._search_just_selected = True
+                    st.session_state._search_just_selected_query = search_query
                     st.session_state.assessment_results = None
                     st.session_state.satellite_raw = None
                     st.session_state.env_data = None
