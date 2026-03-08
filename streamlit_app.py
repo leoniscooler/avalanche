@@ -4772,7 +4772,7 @@ def create_forecast_chart(forecast_data):
     # Prepare data for chart - ensure no None values
     chart_data = pd.DataFrame({
         'Day': [d['date_formatted'] for d in daily],
-        'Risk %': [d.get('risk_score', 0) * 100 for d in daily],
+        'Risk %': [round(d.get('risk_score', 0) * 100) for d in daily],
         'Snowfall (cm)': [d.get('snowfall') or 0 for d in daily],
         'Temp Max (°C)': [d.get('temp_max') or 0 for d in daily],
         'Wind (km/h)': [d.get('wind_max') or 0 for d in daily]
@@ -7266,7 +7266,7 @@ if analysis_mode == "🗺️ Route Analysis":
                         st.markdown("**Risk Trend (Route Midpoint)**")
                         risk_df = pd.DataFrame({
                             'Day': [d['date_formatted'] for d in daily],
-                            'Risk (%)': [d['risk_score'] * 100 for d in daily]
+                            'Risk (%)': [round(d['risk_score'] * 100) for d in daily]
                         })
                         st.bar_chart(risk_df.set_index('Day'))
                 else:
@@ -8056,7 +8056,7 @@ else:
                         st.markdown("**Risk Trend**")
                         risk_df = pd.DataFrame({
                             'Day': [d['date_formatted'] for d in daily],
-                            'Risk (%)': [d['risk_score'] * 100 for d in daily]
+                            'Risk (%)': [round(d['risk_score'] * 100) for d in daily]
                         })
                         st.bar_chart(risk_df.set_index('Day'))
                         
@@ -8294,11 +8294,13 @@ else:
                                     st.markdown("**📊 Raw Forecast Data**")
                                     raw_data_cols = st.columns(3)
                                     with raw_data_cols[0]:
-                                        st.markdown(f"**Temperature**<br>`High: {day.get('temp_max', 0):.1f}°C`<br>`Low: {day.get('temp_min', 0):.1f}°C`", unsafe_allow_html=True)
+                                        st.markdown(f"**Temperature**<br>`High: {format_temp(day.get('temp_max', 0) or 0)}`<br>`Low: {format_temp(day.get('temp_min', 0) or 0)}`", unsafe_allow_html=True)
                                     with raw_data_cols[1]:
-                                        st.markdown(f"**Precipitation**<br>`Rain: {day.get('precipitation', 0):.1f}mm`<br>`Snow: {day.get('snowfall', 0):.1f}cm`", unsafe_allow_html=True)
+                                        _rain = day.get('precipitation', 0) or 0
+                                        _snow = day.get('snowfall', 0) or 0
+                                        st.markdown(f"**Precipitation**<br>`Rain: {format_precip(_rain) if _rain > 0 else 'None'}`<br>`Snow: {format_snow_cm(_snow) if _snow > 0 else 'None'}`", unsafe_allow_html=True)
                                     with raw_data_cols[2]:
-                                        st.markdown(f"**Wind**<br>`Max: {day.get('wind_max', 0):.1f}km/h`<br>`Gust: {day.get('wind_gust', 0):.1f}km/h`", unsafe_allow_html=True)
+                                        st.markdown(f"**Wind**<br>`Max: {format_speed(day.get('wind_max', 0) or 0, 'wind_kmh')}`<br>`Gust: {format_speed(day.get('wind_gust', 0) or 0, 'wind_kmh')}`", unsafe_allow_html=True)
                                     
                                     # Copy-paste friendly format
                                     with st.expander("📋 Copy Raw Values (for verification)", expanded=False):
