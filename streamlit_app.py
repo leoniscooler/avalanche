@@ -7470,14 +7470,52 @@ else:
     # ============================================
     # SECTION 1: LOCATION SELECTION (always visible)
     # ============================================
-    st.markdown('<p class="section-header">Select Location</p>', unsafe_allow_html=True)
+    st.markdown('<p class="section-header">📍 Choose Your Location</p>', unsafe_allow_html=True)
     
-    st.caption("Click on the map to choose your location:")
+    st.markdown("""
+    <div style="background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 10px; padding: 0.75rem 1rem; margin-bottom: 0.75rem;">
+        <div style="display: flex; align-items: center; gap: 0.5rem;">
+            <span style="font-size: 1.3rem;">🗺️</span>
+            <div>
+                <strong style="color: #0369a1; font-size: 0.95rem;">Click anywhere on the map</strong>
+                <span style="color: #6b7280; font-size: 0.85rem;"> to drop a pin, then press <strong>Run Assessment</strong> below.</span>
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Search box for location
+    search_query = st.text_input("🔍 Search for a place", placeholder="e.g. Mount Rainier, Chamonix, Whistler...", 
+                                  key="location_search", label_visibility="collapsed")
+    
+    # Process search query
+    if search_query and search_query != st.session_state.get('last_search_query', ''):
+        st.session_state.last_search_query = search_query
+        try:
+            geocode_url = f"https://nominatim.openstreetmap.org/search?q={search_query}&format=json&limit=1"
+            headers = {'User-Agent': 'AvalanchePredictor/1.0'}
+            resp = requests.get(geocode_url, headers=headers, timeout=5)
+            if resp.status_code == 200:
+                results_geo = resp.json()
+                if results_geo:
+                    lat = float(results_geo[0]['lat'])
+                    lon = float(results_geo[0]['lon'])
+                    st.session_state.map_clicked_lat = lat
+                    st.session_state.map_clicked_lon = lon
+                    st.session_state.assessment_results = None
+                    st.session_state.satellite_raw = None
+                    st.session_state.env_data = None
+                    st.session_state.wind_loading_results = None
+                    st.rerun()
+                else:
+                    st.warning("Location not found. Try a different search or click the map directly.")
+        except Exception:
+            st.warning("Search failed. Click the map directly to choose your location.")
     
     # Map - always visible
     default_lat = st.session_state.get('map_clicked_lat') or 40.0
     default_lon = st.session_state.get('map_clicked_lon') or -105.5
-    default_zoom = 10 if st.session_state.get('map_clicked_lat') else 4
+    default_zoom = 12 if st.session_state.get('map_clicked_lat') else 3
     
     m = folium.Map(location=[default_lat, default_lon], zoom_start=default_zoom, tiles='OpenStreetMap')
     
@@ -7497,11 +7535,12 @@ else:
     if st.session_state.get('map_clicked_lat'):
         folium.Marker(
             [st.session_state.map_clicked_lat, st.session_state.map_clicked_lon],
-            popup=f"Lat: {st.session_state.map_clicked_lat:.4f}, Lon: {st.session_state.map_clicked_lon:.4f}",
+            popup=f"📍 {st.session_state.map_clicked_lat:.4f}°N, {st.session_state.map_clicked_lon:.4f}°E",
+            tooltip="Your selected location",
             icon=folium.Icon(color='red', icon='map-marker', prefix='fa')
         ).add_to(m)
     
-    map_data = st_folium(m, width=None, height=400, key="main_location_map", returned_objects=["last_clicked"])
+    map_data = st_folium(m, width=None, height=450, key="main_location_map", returned_objects=["last_clicked"])
     
     # Handle map clicks (single or double click - just update pin location)
     if map_data and map_data.get('last_clicked'):
@@ -7521,9 +7560,20 @@ else:
     
     # Show selected location info and Run Assessment button
     if st.session_state.get('map_clicked_lat'):
-        st.success(f"📍 Selected: {st.session_state.map_clicked_lat:.4f}°N, {st.session_state.map_clicked_lon:.4f}°E")
+        st.markdown(f"""
+        <div style="background: #ecfdf5; border: 1px solid #6ee7b7; border-radius: 10px; padding: 0.75rem 1rem; margin: 0.5rem 0;">
+            <div style="display: flex; align-items: center; gap: 0.5rem;">
+                <span style="font-size: 1.3rem;">📍</span>
+                <div>
+                    <strong style="color: #065f46;">Location selected</strong>
+                    <span style="color: #047857; font-size: 0.9rem;"> — {st.session_state.map_clicked_lat:.4f}°N, {st.session_state.map_clicked_lon:.4f}°E</span>
+                </div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
         
         if not st.session_state.assessment_results:
+            st.markdown("")
             if st.button("🔍 Run Avalanche Assessment", type="primary", use_container_width=True, key="run_assessment_btn"):
                 st.session_state.location = create_location_from_coords(
                     st.session_state.map_clicked_lat,
@@ -7539,6 +7589,12 @@ else:
                 st.session_state.assessment_results = None
                 st.session_state.wind_loading_results = None
                 st.rerun()
+    else:
+        st.markdown("""
+        <div style="background: #fefce8; border: 1px solid #fde68a; border-radius: 10px; padding: 0.75rem 1rem; margin: 0.5rem 0; text-align: center;">
+            <span style="color: #92400e; font-size: 0.9rem;">👆 Click on the map above to place a pin at your location</span>
+        </div>
+        """, unsafe_allow_html=True)
     
     st.markdown("---")
     
