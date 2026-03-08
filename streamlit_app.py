@@ -7827,13 +7827,13 @@ else:
                         _first_half = sum(_week_risks[:3]) / 3
                         _second_half = sum(_week_risks[3:]) / max(len(_week_risks[3:]), 1)
                         if _second_half > _first_half * 1.15:
-                            _trend = "📈 Risk is **increasing** through the week"
+                            _trend = "📈 Risk is <strong>increasing</strong> through the week"
                             _trend_color = "#dc2626"
                         elif _second_half < _first_half * 0.85:
-                            _trend = "📉 Risk is **decreasing** through the week"
+                            _trend = "📉 Risk is <strong>decreasing</strong> through the week"
                             _trend_color = "#10b981"
                         else:
-                            _trend = "➡️ Risk remains **relatively stable** this week"
+                            _trend = "➡️ Risk remains <strong>relatively stable</strong> this week"
                             _trend_color = "#f59e0b"
                     else:
                         _trend = "➡️ Limited forecast data available"
