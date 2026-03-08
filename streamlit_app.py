@@ -4061,7 +4061,7 @@ def create_route_map(route_analysis, center_lat=None, center_lon=None):
                 fill=True,
                 fillColor='#dc2626',
                 fillOpacity=0.7,
-                popup=f"<b>High Risk Zone</b><br>Risk: {risk_score*100:.0f}%<br>Factors: {', '.join(wp.get('risk_factors', []))}"
+                popup=f"<b>High Risk Zone</b><br>Risk: {clamp_risk_pct(risk_score*100)}%<br>Factors: {', '.join(wp.get('risk_factors', []))}"
             ).add_to(m)
     
     # Add layer control
@@ -4762,6 +4762,16 @@ def get_risk_level_from_score(score):
         return 'LOW'
 
 
+def clamp_risk_pct(raw_pct):
+    """Clamp displayed risk percentage: 0%->1%, 100%->90%. Returns integer."""
+    pct = round(raw_pct)
+    if pct <= 0:
+        return 1
+    if pct >= 100:
+        return 90
+    return pct
+
+
 def create_forecast_chart(forecast_data):
     """Create a 7-day forecast chart using Streamlit native charts."""
     if not forecast_data.get('available') or not forecast_data.get('daily'):
@@ -4772,7 +4782,7 @@ def create_forecast_chart(forecast_data):
     # Prepare data for chart - ensure no None values
     chart_data = pd.DataFrame({
         'Day': [d['date_formatted'] for d in daily],
-        'Risk %': [round(d.get('risk_score', 0) * 100) for d in daily],
+        'Risk %': [clamp_risk_pct(d.get('risk_score', 0) * 100) for d in daily],
         'Snowfall (cm)': [d.get('snowfall') or 0 for d in daily],
         'Temp Max (°C)': [d.get('temp_max') or 0 for d in daily],
         'Wind (km/h)': [d.get('wind_max') or 0 for d in daily]
@@ -7257,7 +7267,7 @@ if analysis_mode == "🗺️ Route Analysis":
                                 <div style="background: {bg_color}; border: 2px solid {border_color}; 
                                             border-radius: 8px; padding: 0.5rem; text-align: center;">
                                     <div style="font-size: 0.7rem; color: #6b7280;">{day['date_formatted']}</div>
-                                    <div style="font-size: 1.1rem; font-weight: 700; color: {text_color};">{risk_score*100:.0f}%</div>
+                                    <div style="font-size: 1.1rem; font-weight: 700; color: {text_color};">{clamp_risk_pct(risk_score*100)}%</div>
                                     <div style="font-size: 0.6rem; color: {text_color};">{risk_level}</div>
                                 </div>
                                 """, unsafe_allow_html=True)
@@ -7267,7 +7277,7 @@ if analysis_mode == "🗺️ Route Analysis":
                         day_labels = [d['date_formatted'] for d in daily]
                         risk_df = pd.DataFrame({
                             'Day': pd.Categorical(day_labels, categories=day_labels, ordered=True),
-                            'Risk (%)': [round(d['risk_score'] * 100) for d in daily]
+                            'Risk (%)': [clamp_risk_pct(d['risk_score'] * 100) for d in daily]
                         })
                         st.bar_chart(risk_df.set_index('Day'))
                 else:
@@ -7612,11 +7622,8 @@ else:
         </div>
         """, unsafe_allow_html=True)
         
-        # Main risk card - show 0% only for NONE, otherwise minimum 1%
-        if results['risk_level'] == 'NONE':
-            display_prob = 0
-        else:
-            display_prob = max(results['avalanche_probability'] * 100, 1)
+        # Clamp displayed probability: 0%->1%, 100%->90%
+        display_prob = clamp_risk_pct(results['avalanche_probability'] * 100)
         st.markdown(f"""
         <div class="risk-card {results['risk_class']}" style="margin-top: 1rem;">
             <div class="risk-label">Current Avalanche Risk</div>
@@ -7932,7 +7939,7 @@ else:
                         )
                         
                         # Current location marker (red)
-                        map_risk_pct = 0 if results['risk_level'] == 'NONE' else max(results['avalanche_probability']*100, 1)
+                        map_risk_pct = clamp_risk_pct(results['avalanche_probability']*100)
                         folium.Marker(
                             [loc['latitude'], loc['longitude']],
                             popup=f"Current Location<br>Risk: {map_risk_pct:.0f}%",
@@ -8008,7 +8015,7 @@ else:
                                 <div style="background: {bg_color}; border: 2px solid {border_color}; 
                                             border-radius: 8px; padding: 0.5rem; text-align: center;">
                                     <div style="font-size: 0.7rem; color: #6b7280; font-weight: 500;">{day['date_formatted']}</div>
-                                    <div style="font-size: 1.1rem; font-weight: 700; color: {text_color};">{risk_score*100:.0f}%</div>
+                                    <div style="font-size: 1.1rem; font-weight: 700; color: {text_color};">{clamp_risk_pct(risk_score*100)}%</div>
                                     <div style="font-size: 0.6rem; color: {text_color};">{risk_level}</div>
                                 </div>
                                 """, unsafe_allow_html=True)
@@ -8019,7 +8026,7 @@ else:
                         day_labels = [d['date_formatted'] for d in daily]
                         risk_df = pd.DataFrame({
                             'Day': pd.Categorical(day_labels, categories=day_labels, ordered=True),
-                            'Risk (%)': [round(d['risk_score'] * 100) for d in daily]
+                            'Risk (%)': [clamp_risk_pct(d['risk_score'] * 100) for d in daily]
                         })
                         st.bar_chart(risk_df.set_index('Day'))
                         
@@ -8232,7 +8239,7 @@ else:
                                 forecast_inputs['profile_time'] = 12  # Noon
                                 
                                 # Create expander for this day's detailed conditions
-                                with st.expander(f"📅 {day_date} - Risk: {risk_level} ({risk_score*100:.0f}%)", expanded=(day_idx == 0)):
+                                with st.expander(f"📅 {day_date} - Risk: {risk_level} ({clamp_risk_pct(risk_score*100)}%)", expanded=(day_idx == 0)):
                                     # Color based on risk level
                                     if risk_level == 'HIGH':
                                         color = '#dc2626'
@@ -8245,7 +8252,7 @@ else:
                                     <div style="background: linear-gradient(90deg, {color}15 0%, transparent 100%); 
                                                 padding: 0.75rem; border-left: 4px solid {color}; border-radius: 0 4px 4px 0; 
                                                 margin-bottom: 1rem;">
-                                        <strong style="color: {color};">{risk_level} Risk - {risk_score*100:.0f}% probability</strong><br>
+                                        <strong style="color: {color};">{risk_level} Risk - {clamp_risk_pct(risk_score*100)}% probability</strong><br>
                                         <span style="font-size: 0.85rem; color: #6b7280;">
                                             📡 Data from: Open-Meteo Forecast API | 
                                             <a href="https://api.open-meteo.com/v1/forecast?latitude={forecast_lat}&longitude={forecast_lon}&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,snowfall_sum,wind_speed_10m_max,wind_gusts_10m_max,shortwave_radiation_sum&timezone=auto" target="_blank" style="color: #0369a1;">🔗 Verify</a>
