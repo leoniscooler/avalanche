@@ -6869,43 +6869,43 @@ if analysis_mode == "🗺️ Route Analysis":
                 for rec in wind_analysis.get('recommendations', []):
                     st.markdown(f"• {rec}")
                 
-                # Show wind loading overlay on a map
-                with st.expander("View Wind Loading Zones on Map"):
-                    wind_map = folium.Map(
-                        location=[start_wp[0], start_wp[1]],
-                        zoom_start=12,
-                        tiles='OpenStreetMap'
-                    )
-                    
-                    # Add wind loading overlays
-                    overlays = create_wind_loading_overlay(start_wp[0], start_wp[1], wind_analysis, radius_km=3)
-                    for name, overlay in overlays:
-                        overlay.add_to(wind_map)
-                    
-                    # Add route
-                    if st.session_state.route_waypoints:
-                        folium.PolyLine(
-                            locations=st.session_state.route_waypoints,
-                            color='#3b82f6',
-                            weight=3,
-                            opacity=0.8
-                        ).add_to(wind_map)
-                    
-                    # Legend
-                    legend_html = '''
-                    <div style="position: fixed; bottom: 50px; left: 50px; z-index: 1000;
-                                background: white; padding: 10px; border-radius: 5px;
-                                box-shadow: 0 2px 6px rgba(0,0,0,0.3); font-size: 12px;">
-                        <strong>Wind Loading Zones</strong><br>
-                        <span style="color: #dc2626;">■</span> Leeward (High Risk)<br>
-                        <span style="color: #f59e0b;">■</span> Cross-loaded (Moderate)<br>
-                        <span style="color: #10b981;">■</span> Windward (Lower Risk)<br>
-                        <span style="color: #1f2937;">→</span> Wind Direction
-                    </div>
-                    '''
-                    wind_map.get_root().html.add_child(folium.Element(legend_html))
-                    
-                    st_folium(wind_map, width=None, height=400, key="wind_loading_map")
+                # Show wind loading overlay on a map - shown directly
+                st.markdown("🗺️ **Wind Loading Zones**")
+                wind_map = folium.Map(
+                    location=[start_wp[0], start_wp[1]],
+                    zoom_start=12,
+                    tiles='OpenStreetMap'
+                )
+                
+                # Add wind loading overlays
+                overlays = create_wind_loading_overlay(start_wp[0], start_wp[1], wind_analysis, radius_km=3)
+                for name, overlay in overlays:
+                    overlay.add_to(wind_map)
+                
+                # Add route
+                if st.session_state.route_waypoints:
+                    folium.PolyLine(
+                        locations=st.session_state.route_waypoints,
+                        color='#3b82f6',
+                        weight=3,
+                        opacity=0.8
+                    ).add_to(wind_map)
+                
+                # Legend
+                legend_html = '''
+                <div style="position: fixed; bottom: 50px; left: 50px; z-index: 1000;
+                            background: white; padding: 10px; border-radius: 5px;
+                            box-shadow: 0 2px 6px rgba(0,0,0,0.3); font-size: 12px;">
+                    <strong>Wind Loading Zones</strong><br>
+                    <span style="color: #dc2626;">■</span> Leeward (High Risk)<br>
+                    <span style="color: #f59e0b;">■</span> Cross-loaded (Moderate)<br>
+                    <span style="color: #10b981;">■</span> Windward (Lower Risk)<br>
+                    <span style="color: #1f2937;">→</span> Wind Direction
+                </div>
+                '''
+                wind_map.get_root().html.add_child(folium.Element(legend_html))
+                
+                st_folium(wind_map, width=None, height=400, key="wind_loading_map")
             else:
                 st.info("Wind data not available for this location")
         
@@ -6949,9 +6949,9 @@ if analysis_mode == "🗺️ Route Analysis":
         }
         
         # Create tabs
-        rt_tab_forecast, rt_tab_alternatives, rt_tab_summary, rt_tab_profile, rt_tab_ai, rt_tab_wind, rt_tab_conditions, rt_tab_live, rt_tab_details = st.tabs([
-            "📅 Forecast", "🗺️ Alternatives", "📋 Summary", "👤 Personal", "🤖 Ask AI",
-            "💨 Wind", "🌡️ Conditions", "📷 Live View", "ℹ️ Details"
+        rt_tab_forecast, rt_tab_summary, rt_tab_alternatives, rt_tab_profile, rt_tab_wind, rt_tab_conditions, rt_tab_live, rt_tab_details, rt_tab_ai = st.tabs([
+            "📅 Forecast", "📋 Summary", "🗺️ Alternatives", "👤 Personal",
+            "💨 Wind", "🌡️ Conditions", "📷 Live View", "ℹ️ Details", "🤖 Ask AI"
         ])
         
         # TAB: Route Summary
@@ -7658,12 +7658,7 @@ else:
         
         if not st.session_state.assessment_results:
             st.markdown("")
-            # Show loading spinner if assessment is running
-            if st.session_state.get('run_assessment'):
-                st.info("⏳ Running avalanche assessment... Please wait.")
-                loading_placeholder = st.empty()
-                loading_placeholder.progress(0, text="Initializing...")
-            elif st.button("🔍 Run Avalanche Assessment", type="primary", use_container_width=True, key="run_assessment_btn"):
+            if st.button("🔍 Run Avalanche Assessment", type="primary", use_container_width=True, key="run_assessment_btn"):
                 st.session_state.location = create_location_from_coords(
                     st.session_state.map_clicked_lat,
                     st.session_state.map_clicked_lon
@@ -7762,14 +7757,14 @@ else:
         st.markdown("### 📊 Detailed Forecast & Conditions")
         
         # Create tabs including the moved sections
-        tab_forecast, tab_alternatives, tab_summary, tab_profile, tab_ai, tab_wind, tab_conditions, tab_live, tab_details = st.tabs([
-            "📅 Forecast", "🗺️ Alternatives", "📋 Summary", "👤 Personal", "🤖 Ask AI",
-            "💨 Wind", "🌡️ Conditions", "📷 Live View", "ℹ️ Details"
+        tab_forecast, tab_summary, tab_alternatives, tab_profile, tab_wind, tab_conditions, tab_live, tab_details, tab_ai = st.tabs([
+            "📅 Forecast", "📋 Summary", "🗺️ Alternatives", "👤 Personal",
+            "💨 Wind", "🌡️ Conditions", "📷 Live View", "ℹ️ Details", "🤖 Ask AI"
         ])
         
-        # TAB: Conditions Summary
+        # TAB: Conditions Summary (Today + Week)
         with tab_summary:
-            # Generate the natural language summary
+            # Generate the natural language summary for today
             summary_text, key_factors = generate_risk_summary(
                 results, 
                 st.session_state.env_data,
@@ -7777,6 +7772,8 @@ else:
                 loc
             )
             
+            # === TODAY'S SUMMARY ===
+            st.markdown("#### 📌 Today's Conditions")
             st.markdown(f"""
             <div style="background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%); 
                         border-radius: 12px; padding: 1.25rem; margin: 0.5rem 0;
@@ -7795,6 +7792,102 @@ else:
                     for factor in key_factors
                 ])
                 st.markdown(factors_html, unsafe_allow_html=True)
+            
+            # === WEEK OUTLOOK ===
+            st.markdown("---")
+            st.markdown("#### 📅 7-Day Outlook")
+            
+            # Fetch forecast for week summary
+            _sum_loc = results.get('location', st.session_state.location)
+            _sum_lat, _sum_lon = extract_lat_lon(_sum_loc) if _sum_loc else (None, None)
+            if _sum_loc and _sum_lat is not None and _sum_lon is not None:
+                _sum_snow = results.get('snow_depth', 0) or 0
+                _sum_ml_risk = results.get('avalanche_probability', None)
+                _sum_forecast = fetch_7day_forecast(_sum_lat, _sum_lon, _sum_snow, _sum_ml_risk)
+                
+                if _sum_forecast.get('available') and _sum_forecast.get('daily'):
+                    _sum_daily = _sum_forecast['daily']
+                    
+                    # Calculate week stats
+                    _week_risks = [d['risk_score'] for d in _sum_daily]
+                    _avg_risk = sum(_week_risks) / len(_week_risks) if _week_risks else 0
+                    _max_risk = max(_week_risks) if _week_risks else 0
+                    _min_risk = min(_week_risks) if _week_risks else 0
+                    _high_days = sum(1 for d in _sum_daily if d['risk_level'] == 'HIGH')
+                    _mod_days = sum(1 for d in _sum_daily if d['risk_level'] == 'MODERATE')
+                    _low_days = sum(1 for d in _sum_daily if d['risk_level'] == 'LOW')
+                    _total_snow = sum(d.get('snowfall', 0) or 0 for d in _sum_daily)
+                    
+                    # Week trend
+                    if len(_week_risks) >= 2:
+                        _first_half = sum(_week_risks[:3]) / 3
+                        _second_half = sum(_week_risks[3:]) / max(len(_week_risks[3:]), 1)
+                        if _second_half > _first_half * 1.15:
+                            _trend = "📈 Risk is **increasing** through the week"
+                            _trend_color = "#dc2626"
+                        elif _second_half < _first_half * 0.85:
+                            _trend = "📉 Risk is **decreasing** through the week"
+                            _trend_color = "#10b981"
+                        else:
+                            _trend = "➡️ Risk remains **relatively stable** this week"
+                            _trend_color = "#f59e0b"
+                    else:
+                        _trend = "➡️ Limited forecast data available"
+                        _trend_color = "#6b7280"
+                    
+                    # Week summary card
+                    st.markdown(f"""
+                    <div style="background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%); 
+                                border-radius: 12px; padding: 1.25rem; margin: 0.5rem 0;
+                                border: 1px solid #93c5fd; line-height: 1.7;">
+                        <div style="color: {_trend_color}; font-weight: 600; font-size: 1rem; margin-bottom: 0.75rem;">{_trend}</div>
+                        <div style="font-size: 0.9rem; color: #1e3a5f;">
+                            The average risk over the next 7 days is <strong>{clamp_risk_pct(_avg_risk * 100)}%</strong>, 
+                            ranging from <strong>{clamp_risk_pct(_min_risk * 100)}%</strong> to <strong>{clamp_risk_pct(_max_risk * 100)}%</strong>.
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    # Day breakdown stats
+                    _stat_cols = st.columns(4)
+                    with _stat_cols[0]:
+                        st.metric("Avg Risk", f"{clamp_risk_pct(_avg_risk * 100)}%")
+                    with _stat_cols[1]:
+                        st.metric("High Risk Days", f"{_high_days}")
+                    with _stat_cols[2]:
+                        st.metric("Moderate Days", f"{_mod_days}")
+                    with _stat_cols[3]:
+                        st.metric("Total Snowfall", format_snow_cm(_total_snow))
+                    
+                    # Build week narrative
+                    _week_parts = []
+                    if _high_days > 0:
+                        _high_dates = [d['date_formatted'] for d in _sum_daily if d['risk_level'] == 'HIGH']
+                        _week_parts.append(f"<strong>High risk</strong> is expected on {', '.join(_high_dates)}. Avoid avalanche terrain on these days.")
+                    if _mod_days > 0:
+                        _mod_dates = [d['date_formatted'] for d in _sum_daily if d['risk_level'] == 'MODERATE']
+                        _week_parts.append(f"<strong>Moderate conditions</strong> are forecast for {', '.join(_mod_dates)} — exercise caution in steep terrain.")
+                    if _low_days > 0:
+                        _week_parts.append(f"<strong>{_low_days} day{'s' if _low_days > 1 else ''}</strong> show{'s' if _low_days == 1 else ''} lower risk, offering better windows for backcountry travel.")
+                    if _total_snow > 5:
+                        _week_parts.append(f"Significant snowfall ({format_snow_cm(_total_snow)}) is expected, which will affect stability and increase avalanche potential.")
+                    
+                    # Best/worst days
+                    _best_day = min(_sum_daily, key=lambda d: d['risk_score'])
+                    _worst_day = max(_sum_daily, key=lambda d: d['risk_score'])
+                    _week_parts.append(f"<strong>Best day:</strong> {_best_day['date_formatted']} ({clamp_risk_pct(_best_day['risk_score']*100)}% risk). <strong>Worst day:</strong> {_worst_day['date_formatted']} ({clamp_risk_pct(_worst_day['risk_score']*100)}% risk).")
+                    
+                    st.markdown(f"""
+                    <div style="background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%); 
+                                border-radius: 12px; padding: 1.25rem; margin: 0.5rem 0;
+                                border: 1px solid #e2e8f0; line-height: 1.8; font-size: 0.9rem;">
+                        {' '.join(_week_parts)}
+                    </div>
+                    """, unsafe_allow_html=True)
+                else:
+                    st.info("7-day forecast data not available for this location.")
+            else:
+                st.info("Location data not available for forecast.")
         
         # TAB: Personal Assessment
         with tab_profile:
@@ -8015,44 +8108,44 @@ else:
                             </div>
                             """, unsafe_allow_html=True)
                     
-                    # Option to view on map
-                    with st.expander("🗺️ View alternatives on map"):
-                        alt_map = folium.Map(
-                            location=[loc['latitude'], loc['longitude']],
-                            zoom_start=13,
-                            tiles='OpenStreetMap'
-                        )
-                        
-                        # Current location marker (red)
-                        map_risk_pct = clamp_risk_pct(results['avalanche_probability']*100)
+                    # Alternatives map - shown directly
+                    st.markdown("🗺️ **Alternatives Map**")
+                    alt_map = folium.Map(
+                        location=[loc['latitude'], loc['longitude']],
+                        zoom_start=13,
+                        tiles='OpenStreetMap'
+                    )
+                    
+                    # Current location marker (red)
+                    map_risk_pct = clamp_risk_pct(results['avalanche_probability']*100)
+                    folium.Marker(
+                        [loc['latitude'], loc['longitude']],
+                        popup=f"Current Location<br>Risk: {map_risk_pct:.0f}%",
+                        icon=folium.Icon(color='red', icon='exclamation-triangle', prefix='fa'),
+                        tooltip="Current location (Higher risk)"
+                    ).add_to(alt_map)
+                    
+                    # Alternative location markers
+                    colors = {'LOW': 'green', 'MODERATE': 'orange', 'HIGH': 'red'}
+                    for alt in alternatives:
                         folium.Marker(
-                            [loc['latitude'], loc['longitude']],
-                            popup=f"Current Location<br>Risk: {map_risk_pct:.0f}%",
-                            icon=folium.Icon(color='red', icon='exclamation-triangle', prefix='fa'),
-                            tooltip="Current location (Higher risk)"
+                            [alt['lat'], alt['lon']],
+                            popup=f"{alt['name']}<br>Risk: {alt['estimated_risk']*100:.0f}%<br>{alt['reason']}",
+                            icon=folium.Icon(color=colors.get(alt['risk_level'], 'blue'), icon='check', prefix='fa'),
+                            tooltip=f"{alt['name']} ({alt['risk_level']})"
                         ).add_to(alt_map)
-                        
-                        # Alternative location markers
-                        colors = {'LOW': 'green', 'MODERATE': 'orange', 'HIGH': 'red'}
-                        for alt in alternatives:
-                            folium.Marker(
-                                [alt['lat'], alt['lon']],
-                                popup=f"{alt['name']}<br>Risk: {alt['estimated_risk']*100:.0f}%<br>{alt['reason']}",
-                                icon=folium.Icon(color=colors.get(alt['risk_level'], 'blue'), icon='check', prefix='fa'),
-                                tooltip=f"{alt['name']} ({alt['risk_level']})"
-                            ).add_to(alt_map)
-                        
-                        # Draw connections
-                        for alt in alternatives:
-                            folium.PolyLine(
-                                [[loc['latitude'], loc['longitude']], [alt['lat'], alt['lon']]],
-                                color='#6b7280',
-                                weight=1,
-                                opacity=0.5,
-                                dash_array='5, 10'
-                            ).add_to(alt_map)
-                        
-                        st_folium(alt_map, width=None, height=350, key="alternatives_map")
+                    
+                    # Draw connections
+                    for alt in alternatives:
+                        folium.PolyLine(
+                            [[loc['latitude'], loc['longitude']], [alt['lat'], alt['lon']]],
+                            color='#6b7280',
+                            weight=1,
+                            opacity=0.5,
+                            dash_array='5, 10'
+                        ).add_to(alt_map)
+                    
+                    st_folium(alt_map, width=None, height=350, key="alternatives_map")
                 else:
                     st.info("Current location already has the lowest risk in the surrounding area.")
             else:
@@ -8455,43 +8548,43 @@ else:
                     else:
                         st.markdown("All aspects similar risk")
                 
-                # Wind loading map
-                with st.expander("View Wind Loading Map"):
-                    wind_map = folium.Map(
-                        location=[wind_loc['latitude'], wind_loc['longitude']],
-                        zoom_start=13,
-                        tiles='OpenStreetMap'
-                    )
-                    
-                    folium.TileLayer(
-                        tiles='https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
-                        attr='OpenTopoMap',
-                        name='Terrain',
-                        overlay=False,
-                        show=False
-                    ).add_to(wind_map)
-                    
-                    overlays = create_wind_loading_overlay(wind_loc['latitude'], wind_loc['longitude'], wind_analysis, radius_km=2)
-                    for name, overlay in overlays:
-                        overlay.add_to(wind_map)
-                    
-                    folium.Marker(
-                        [wind_loc['latitude'], wind_loc['longitude']],
-                        popup=f"Elevation: {wind_loc.get('elevation', 'N/A')}m",
-                        icon=folium.Icon(color='blue', icon='info-sign')
-                    ).add_to(wind_map)
-                    
-                    folium.LayerControl().add_to(wind_map)
-                    
-                    st.markdown("""
-                    <div style="font-size: 0.8rem; color: #6b7280; margin-bottom: 0.5rem;">
-                        <span style="color: #dc2626;">■</span> Leeward (High Risk) · 
-                        <span style="color: #f59e0b;">■</span> Cross-loaded · 
-                        <span style="color: #10b981;">■</span> Windward (Safer)
-                    </div>
-                    """, unsafe_allow_html=True)
-                    
-                    st_folium(wind_map, width=None, height=400, key="wind_map_tab")
+                # Wind loading map - shown directly
+                st.markdown("🗺️ **Wind Loading Map**")
+                wind_map = folium.Map(
+                    location=[wind_loc['latitude'], wind_loc['longitude']],
+                    zoom_start=13,
+                    tiles='OpenStreetMap'
+                )
+                
+                folium.TileLayer(
+                    tiles='https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
+                    attr='OpenTopoMap',
+                    name='Terrain',
+                    overlay=False,
+                    show=False
+                ).add_to(wind_map)
+                
+                overlays = create_wind_loading_overlay(wind_loc['latitude'], wind_loc['longitude'], wind_analysis, radius_km=2)
+                for name, overlay in overlays:
+                    overlay.add_to(wind_map)
+                
+                folium.Marker(
+                    [wind_loc['latitude'], wind_loc['longitude']],
+                    popup=f"Elevation: {wind_loc.get('elevation', 'N/A')}m",
+                    icon=folium.Icon(color='blue', icon='info-sign')
+                ).add_to(wind_map)
+                
+                folium.LayerControl().add_to(wind_map)
+                
+                st.markdown("""
+                <div style="font-size: 0.8rem; color: #6b7280; margin-bottom: 0.5rem;">
+                    <span style="color: #dc2626;">■</span> Leeward (High Risk) · 
+                    <span style="color: #f59e0b;">■</span> Cross-loaded · 
+                    <span style="color: #10b981;">■</span> Windward (Safer)
+                </div>
+                """, unsafe_allow_html=True)
+                
+                st_folium(wind_map, width=None, height=400, key="wind_map_tab")
             else:
                 st.info("Wind data not available for this location")
         
@@ -8664,7 +8757,7 @@ else:
                     has_valid_data = any([temp_valid, snow_valid, wind_valid, rh_valid, precip_valid, sw_valid])
                     
                     if has_valid_data:
-                        with st.expander("🌐 Open-Meteo (Real-time Weather)", expanded=True):
+                        with st.expander("🌐 Open-Meteo (Real-time Weather)", expanded=False):
                             st.markdown(f'<a href="{web_url}" target="_blank">🔗 Open Website</a> | <a href="{api_url}" target="_blank">📡 View Raw API Response</a>', unsafe_allow_html=True)
                             
                             col1, col2, col3 = st.columns(3)
@@ -9855,7 +9948,18 @@ if analysis_mode == "📍 Single Point":
         st.session_state.run_assessment = False
 
     if should_run_assessment:
-        # Fetch satellite data and run assessment
+        # Fetch satellite data and run assessment - prominent loading UI
+        loading_container = st.container()
+        with loading_container:
+            st.markdown("""
+            <div style="background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%); 
+                        border: 2px solid #3b82f6; border-radius: 12px; padding: 1.5rem; 
+                        margin: 1rem 0; text-align: center;">
+                <div style="font-size: 2rem; margin-bottom: 0.5rem;">🛰️</div>
+                <div style="font-size: 1.1rem; font-weight: 600; color: #1e40af;">Fetching Satellite Data</div>
+                <div style="font-size: 0.85rem; color: #3b82f6; margin-top: 0.25rem;">Collecting real-time weather & snow data from multiple sources...</div>
+            </div>
+            """, unsafe_allow_html=True)
         progress_bar = st.progress(0)
         status_text = st.empty()
         
@@ -9877,6 +9981,7 @@ if analysis_mode == "📍 Single Point":
         
         progress_bar.empty()
         status_text.empty()
+        loading_container.empty()
         
         # Prepare input data from satellite data (using NaN for missing values instead of 0)
         if st.session_state.env_data:
